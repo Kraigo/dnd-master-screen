@@ -5,6 +5,7 @@ import { startConsole } from "./console.ts";
 import { openBrowser } from "./os/open-browser.ts";
 import { APP_ID, logLan, startServer } from "./server.ts";
 import { DATA_DIR } from "./store.ts";
+import { version } from "../package.json";
 
 const FIRST_PORT = Number(process.env.PORT) || 4321;
 const OPEN_BROWSER = !process.env.NO_BROWSER;
@@ -47,7 +48,7 @@ async function main(): Promise<void> {
     try {
       const server = await startServer(port);
       const base = `http://localhost:${server.port}`;
-      console.log("DnD Master Screen\n");
+      console.log(`DnD Master Screen ${version}\n`);
       console.log("On this computer (no password needed, opens automatically):");
       console.log(`  Master panel:    ${base}/master`);
       console.log(`  Players' screen: ${base}/`);

@@ -1,6 +1,6 @@
 {
   "name": "dnd-master-screen",
-  "version": "1.0.0",
+  "version": "0.1.0",
   "private": true,
   "type": "module",
   "description": "DM screen: show your images (a folder or Notion) on the players' monitor",
@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit",
     "build:mac": "NODE_ENV=production bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile dist/dnd-master-screen-mac && codesign --force --sign - dist/dnd-master-screen-mac",
     "build:win": "NODE_ENV=production bun build --compile --minify --target=bun-windows-x64 src/main.ts --outfile dist/dnd-master-screen.exe",
-    "build": "bun run build:mac && bun run build:win"
+    "build": "bun run build:mac && bun run build:win",
+    "package": "bun run build && cd dist && rm -f dnd-master-screen-mac.zip && ditto -c -k dnd-master-screen-mac dnd-master-screen-mac.zip"
   },
   "engines": {
     "bun": ">=1.2.0"

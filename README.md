@@ -11,10 +11,10 @@ The players only ever see the image: no titles, captions or file names, not even
 
 ## Install
 
-Download the file for your system and put it anywhere (e.g. Applications or Desktop):
+Download the latest version from [Releases](https://github.com/Kraigo/dnd-master-screen/releases/latest):
 
-- macOS (Apple Silicon): `dnd-master-screen-mac`
-- Windows: `dnd-master-screen.exe`
+- macOS (Apple Silicon): `dnd-master-screen-mac.zip`, double-click it to unzip, put `dnd-master-screen-mac` anywhere (e.g. Applications or Desktop)
+- Windows: `dnd-master-screen.exe`, put it anywhere
 
 Run it. A console window opens and the master panel opens in your browser at `http://localhost:4321/master`. Keep the console window open during the game. To stop the app, close that window, press Q (or Ctrl+C) in it, or use **Settings → Quit app** in the master panel. Running the app again while it is already running just opens the panel.
 
@@ -132,6 +132,7 @@ bun run dev        # http://localhost:4321/master, data in ./.data, reload on ch
 bun run typecheck
 bun run start      # production mode, data in the app data folder, opens the browser
 bun run build      # dist/dnd-master-screen-mac and dist/dnd-master-screen.exe
+bun run package    # build + dist/dnd-master-screen-mac.zip for a release
 ```
 
 `build:mac` re-signs the binary ad hoc (`codesign --sign -`): without it recent macOS versions kill the compiled binary on launch. Build it on a Mac.
