@@ -2,11 +2,13 @@
 // Showing images never talks to Notion: Notion projects are served from their cache,
 // folder projects straight from the folder. Notion is contacted only on "Sync".
 //
-// The players' screen ("/") may be opened from another device when HOST=0.0.0.0.
-// The panel's API, its WebSocket, the folder dialog and the token answer only to
-// the machine the server runs on, so the panel page is useless from the LAN.
+// By default the server listens on 127.0.0.1 only. With "other devices" turned on
+// (LAN mode) it listens on all interfaces: other devices may open the players'
+// screen ("/") freely, and the master panel ("/master") after entering the master
+// password. Turning LAN mode on/off and quitting the app stay local-only.
 
 import { stat } from "node:fs/promises";
+import { networkInterfaces } from "node:os";
 import { join } from "node:path";
 import type { Server, ServerWebSocket } from "bun";
 import { readManifest } from "./manifest.ts";
@@ -54,7 +56,13 @@ type Ws = ServerWebSocket<WsData>;
 // Projects and the active library
 
 let projects: Project[] = [];
-let settings: Settings = { activeProjectId: null, notionToken: null, notionWorkspace: null };
+let settings: Settings = {
+  activeProjectId: null,
+  notionToken: null,
+  notionWorkspace: null,
+  lanEnabled: false,
+  masterPasswordHash: null,
+};
 let active: Project | null = null;
 let manifest: Manifest | null = null;
 let folderError: string | null = null;
@@ -118,7 +126,18 @@ async function activate(project: Project | null): Promise<void> {
   publishState();
 }
 
-function appState(): AppState {
+function lanAddresses(): string[] {
+  if (!settings.lanEnabled || !server) return [];
+  const out: string[] = [];
+  for (const list of Object.values(networkInterfaces())) {
+    for (const a of list ?? []) {
+      if (a.family === "IPv4" && !a.internal) out.push(`http://${a.address}:${server.port}`);
+    }
+  }
+  return out;
+}
+
+function appState(req: Request): AppState {
   return {
     projects,
     activeProjectId: active?.id ?? null,
@@ -126,6 +145,8 @@ function appState(): AppState {
     folderError,
     sync: syncStatus,
     notion: { tokenSet: !!settings.notionToken, workspace: settings.notionWorkspace },
+    lan: { enabled: settings.lanEnabled, addresses: lanAddresses() },
+    local: isLocal(req),
   };
 }
 
@@ -238,8 +259,48 @@ const json = (data: unknown, status = 200) => Response.json(data, { status, head
 
 type Req = Request & { params: Record<string, string> };
 
-/** Admin endpoints: local machine only, and same-origin for anything that changes state. */
-function admin(handler: (req: Req) => Response | Promise<Response>) {
+// ---------------------------------------------------------------------------
+// Master password (other devices only; the computer running the app never needs it)
+
+const SESSION_COOKIE = "dms_session";
+/** Session tokens of devices that entered the password. Kept in memory: a restart logs them out. */
+let sessions = new Set<string>();
+const failedLogins = new Map<string, { count: number; until: number }>();
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 60_000;
+
+function sessionOf(req: Request): string | null {
+  const cookie = req.headers.get("cookie") ?? "";
+  const m = new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([a-f0-9]{64})`).exec(cookie);
+  return m?.[1] ?? null;
+}
+
+function authorized(req: Request): boolean {
+  if (isLocal(req)) return true;
+  const token = sessionOf(req);
+  return settings.lanEnabled && token !== null && sessions.has(token);
+}
+
+function newSessionCookie(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  const token = Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+  sessions.add(token);
+  return `${SESSION_COOKIE}=${token}; Path=/; HttpOnly; SameSite=Strict; Max-Age=2592000`;
+}
+
+const MIN_PASSWORD = 4;
+
+/** Panel endpoints: this computer, or another device with the master password. Same-origin for changes. */
+function guarded(handler: (req: Req) => Response | Promise<Response>) {
+  return (req: Req) => {
+    if (!authorized(req)) return json({ error: "Enter the master password", needsPassword: true }, 401);
+    if (req.method !== "GET" && !sameOrigin(req)) return json({ error: "forbidden" }, 403);
+    return handler(req);
+  };
+}
+
+/** Endpoints that only the computer running the app may call. */
+function localOnly(handler: (req: Req) => Response | Promise<Response>) {
   return (req: Req) => {
     if (!isLocal(req)) return json({ error: "Only available on the computer running the app" }, 403);
     if (req.method !== "GET" && !sameOrigin(req)) return json({ error: "forbidden" }, 403);
@@ -285,25 +346,105 @@ async function createProject(input: Record<string, unknown>): Promise<Project | 
 // ---------------------------------------------------------------------------
 // Server
 
-export async function startServer(opts: { hostname: string; port: number }): Promise<Server<WsData>> {
+function listenHost(): string {
+  return settings.lanEnabled ? "0.0.0.0" : "127.0.0.1";
+}
+
+export function logLan(): void {
+  for (const a of lanAddresses()) console.log(`  Other devices:   ${a}/  (master: ${a}/master)`);
+}
+
+/** Restart the listener after LAN mode changed (Bun cannot change the address of a running server). */
+async function rebind(): Promise<void> {
+  if (!server || server.hostname === listenHost()) return;
+  const port = server.port ?? 0;
+  server.stop(true);
+  try {
+    server = createServer(listenHost(), port);
+  } catch (e) {
+    console.error(`Could not listen on ${listenHost()}:${port}: ${(e as Error).message}`);
+    settings = await updateSettings({ lanEnabled: false });
+    server = createServer(listenHost(), port);
+  }
+  console.log(settings.lanEnabled ? "Other devices can now open the app:" : "Only this computer can open the app now.");
+  logLan();
+}
+
+export async function startServer(port: number): Promise<Server<WsData>> {
   await ensureDataDir();
   projects = await readProjects();
   settings = await readSettings();
+  server = createServer(listenHost(), port);
+  await activate(findProject(settings.activeProjectId) ?? projects[0] ?? null);
+  return server;
+}
 
-  server = Bun.serve({
-    hostname: opts.hostname,
-    port: opts.port,
+function createServer(hostname: string, port: number): Server<WsData> {
+  return Bun.serve({
+    hostname,
+    port,
     development: process.env.NODE_ENV !== "production" && !COMPILED,
     routes: {
       "/": screenPage,
-      "/admin": panelPage,
+      "/master": panelPage,
 
       "/api/health": () => json({ app: APP_ID }),
 
-      "/api/state": { GET: admin(() => json(appState())) },
+      "/api/state": { GET: guarded((req) => json(appState(req))) },
+
+      "/api/login": {
+        POST: async (req) => {
+          if (!settings.lanEnabled || !settings.masterPasswordHash) return json({ error: "Not available" }, 404);
+          if (!sameOrigin(req)) return json({ error: "forbidden" }, 403);
+          const ip = server?.requestIP(req)?.address ?? "?";
+          const now = Date.now();
+          const fails = failedLogins.get(ip);
+          if (fails && fails.until > now) return json({ error: "Too many attempts, wait a minute" }, 429);
+          const password = (await body(req)).password;
+          const ok = typeof password === "string" && (await Bun.password.verify(password, settings.masterPasswordHash));
+          if (!ok) {
+            const count = (fails && fails.until > 0 && fails.until <= now ? 0 : (fails?.count ?? 0)) + 1;
+            failedLogins.set(ip, { count, until: count >= MAX_ATTEMPTS ? now + LOCKOUT_MS : 0 });
+            return json({ error: "Wrong password" }, 401);
+          }
+          failedLogins.delete(ip);
+          return Response.json({ ok: true }, { headers: { "Set-Cookie": newSessionCookie(), "Cache-Control": "no-store" } });
+        },
+      },
+
+      // Turn access from other devices on/off, set or change the master password.
+      "/api/lan": {
+        PUT: localOnly(async (req) => {
+          const input = await body(req);
+          const enabled = input.enabled === true;
+          const password = typeof input.password === "string" ? input.password : "";
+          if (password && password.length < MIN_PASSWORD) {
+            return json({ error: `The password needs at least ${MIN_PASSWORD} characters` }, 400);
+          }
+          if (enabled && !password && !settings.masterPasswordHash) return json({ error: "Set a password first" }, 400);
+          const patch: Partial<Settings> = { lanEnabled: enabled };
+          if (password) {
+            patch.masterPasswordHash = await Bun.password.hash(password);
+            sessions = new Set(); // a new password logs every other device out
+          }
+          if (!enabled) sessions = new Set();
+          settings = await updateSettings(patch);
+          // Answer first: rebinding closes every open connection, this one included.
+          setTimeout(() => void rebind(), 100);
+          return json({ ok: true });
+        }),
+      },
+
+      "/api/quit": {
+        POST: localOnly(() => {
+          console.log("Stopped from the master panel.");
+          setTimeout(() => process.exit(0), 200);
+          return json({ ok: true });
+        }),
+      },
 
       "/api/projects": {
-        POST: admin(async (req) => {
+        POST: guarded(async (req) => {
           const created = await createProject(await body(req));
           if (typeof created === "string") return json({ error: created }, 400);
           projects = [...projects, created];
@@ -315,7 +456,7 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
       },
 
       "/api/projects/:id": {
-        PATCH: admin(async (req) => {
+        PATCH: guarded(async (req) => {
           const p = findProject(req.params.id);
           if (!p) return json({ error: "Project not found" }, 404);
           const name = (await body(req)).name;
@@ -325,7 +466,7 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
           await saveProjects();
           return json({ ok: true });
         }),
-        DELETE: admin(async (req) => {
+        DELETE: guarded(async (req) => {
           const p = findProject(req.params.id);
           if (!p) return json({ error: "Project not found" }, 404);
           if (syncStatus.running && syncStatus.projectId === p.id) return json({ error: "Wait for the sync to finish" }, 409);
@@ -339,7 +480,7 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
       },
 
       "/api/projects/:id/activate": {
-        POST: admin(async (req) => {
+        POST: guarded(async (req) => {
           const p = findProject(req.params.id);
           if (!p) return json({ error: "Project not found" }, 404);
           await activate(p);
@@ -349,7 +490,7 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
 
       // Notion: download from Notion. Folder: rescan (normally the folder is watched).
       "/api/projects/:id/sync": {
-        POST: admin(async (req) => {
+        POST: guarded(async (req) => {
           const p = findProject(req.params.id);
           if (!p) return json({ error: "Project not found" }, 404);
           if (p.type === "folder") {
@@ -365,7 +506,7 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
       },
 
       "/api/notion-token": {
-        PUT: admin(async (req) => {
+        PUT: guarded(async (req) => {
           const token = (await body(req)).token;
           if (typeof token !== "string" || !token.trim()) return json({ error: "Paste the token" }, 400);
           let workspace: string;
@@ -378,7 +519,7 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
           publishPanel({ type: "manifest" });
           return json({ workspace });
         }),
-        DELETE: admin(async () => {
+        DELETE: guarded(async () => {
           settings = await updateSettings({ notionToken: null, notionWorkspace: null });
           publishPanel({ type: "manifest" });
           return json({ ok: true });
@@ -386,7 +527,7 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
       },
 
       "/api/pick-folder": {
-        POST: admin(async () => {
+        POST: guarded(async () => {
           try {
             return json({ path: await pickFolder() });
           } catch (e) {
@@ -416,7 +557,7 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
       "/ws": (req, srv) => {
         if (!sameOrigin(req)) return new Response("Forbidden", { status: 403 });
         const role = new URL(req.url).searchParams.get("role") === "screen" ? "screen" : "panel";
-        if (role === "panel" && !isLocal(req)) return new Response("Forbidden", { status: 403 });
+        if (role === "panel" && !authorized(req)) return new Response("Forbidden", { status: 403 });
         if (srv.upgrade(req, { data: { role } })) return undefined;
         return new Response("Expected a WebSocket", { status: 426 });
       },
@@ -464,7 +605,4 @@ export async function startServer(opts: { hostname: string; port: number }): Pro
       },
     },
   });
-
-  await activate(findProject(settings.activeProjectId) ?? projects[0] ?? null);
-  return server;
 }

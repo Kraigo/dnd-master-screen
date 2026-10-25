@@ -1,6 +1,6 @@
 # dnd-master-screen
 
-A DM screen for tabletop games. The laptop stays with the DM, a second monitor faces the players. The DM panel shows your images; click one and it appears full screen on the players' monitor.
+A DM screen for tabletop games. The laptop stays with the DM, a second monitor faces the players. The master panel shows your images; click one and it appears full screen on the players' monitor.
 
 Images come from **projects**, one per game:
 
@@ -16,7 +16,7 @@ Download the file for your system and put it anywhere (e.g. Applications or Desk
 - macOS (Apple Silicon): `dnd-master-screen-mac`
 - Windows: `dnd-master-screen.exe`
 
-Run it. A console window opens and the DM panel opens in your browser at `http://localhost:4321/admin`. Keep the console window open during the game; close it to stop. Running the app again while it is already running just opens the panel.
+Run it. A console window opens and the master panel opens in your browser at `http://localhost:4321/master`. Keep the console window open during the game. To stop the app, close that window (or press Ctrl+C in it), or use **Settings → Quit app** in the master panel. Running the app again while it is already running just opens the panel.
 
 The files are not signed, so the system warns on first launch:
 
@@ -30,7 +30,7 @@ Your projects and settings live in the app data folder (shown in the console), s
 
 ## Projects
 
-Open **Projects** at the top of the panel. The dropdown next to it switches between projects; switching blacks out the players' screen.
+Open **Settings** at the top of the panel. The dropdown next to it switches between projects; switching blacks out the players' screen.
 
 ### Folder project
 
@@ -51,9 +51,9 @@ Supported: jpg, png, webp, gif, avif, svg. Files and folders starting with a dot
 ### Notion project
 
 1. Open [notion.so/profile/integrations](https://www.notion.so/profile/integrations), create an Internal integration in the workspace of the campaign, with "Read content".
-2. Copy its secret (starts with `ntn_`) and paste it in Projects → Notion token. The app checks it and shows the workspace name.
+2. Copy its secret (starts with `ntn_`) and paste it in Settings → Notion token. The app checks it and shows the workspace name.
 3. In Notion open the campaign root page, ••• → Connections → add the integration. Access is inherited by every subpage and database inside.
-4. In Projects → "Add a Notion campaign", paste the link to that page. The first sync starts right away.
+4. In Settings → "Add a Notion campaign", paste the link to that page. The first sync starts right away.
 
 What becomes a tab:
 
@@ -88,15 +88,23 @@ Letter shortcuts also work with a non-Latin (e.g. Russian) keyboard layout.
 
 ### Players' screen on another device
 
-To open the players' screen on a TV browser or another laptop, start the app with `HOST=0.0.0.0` (macOS: `HOST=0.0.0.0 ./dnd-master-screen-mac`; Windows PowerShell: `$env:HOST="0.0.0.0"; .\dnd-master-screen.exe`). The console prints an address like `http://192.168.1.20:4321/`. Other devices can open only the players' screen; the panel, its settings and the token answer only to the computer running the app.
+By default only the computer running the app can open it. To use a TV browser, another laptop or a tablet on the same Wi-Fi: **Settings → Other devices**, set a master password and press "Allow other devices". The panel then lists the addresses, e.g.:
+
+- players' screen: `http://192.168.1.20:4321/` (no password)
+- master panel: `http://192.168.1.20:4321/master` (asks for the master password)
+
+The computer running the app never needs the password. Turning other devices on or off and quitting the app are possible only on that computer. Changing the password or pressing "Only this computer" logs every other device out; after 5 wrong passwords a device must wait a minute. The setting is remembered across restarts.
+
+The first time, the system may ask whether the app may accept incoming network connections (macOS) or show a Windows Defender Firewall prompt: allow it for private networks.
 
 ## Troubleshooting
 
-- **401 / "invalid token"**: the token is wrong or the integration was deleted. Paste it again in Projects.
+- **401 / "invalid token"**: the token is wrong or the integration was deleted. Paste it again in Settings.
 - **404 / "no access"**: the integration is not connected to the campaign page (step 3), or a database lives outside it.
 - **Image failed, "HTTP 403" or "HTTP 400"**: Notion file links live about an hour. Sync again.
 - **"Folder not available"**: the folder was moved, renamed or is on a disconnected drive. Remove the project and add the folder again.
 - **Players' screen does not update**: make sure the app is still running. The screen reconnects by itself and keeps the last image until then.
+- **Other devices cannot connect**: check that both are on the same Wi-Fi, the firewall prompt was allowed, and "Other devices" is on. Guest networks often block devices from seeing each other.
 - **Port in use**: the app tries the next ports (4322, 4323…) by itself; the console shows which one it took.
 
 ## Development
@@ -105,7 +113,7 @@ Requires [Bun](https://bun.sh) 1.2+.
 
 ```sh
 bun install
-bun run dev        # http://localhost:4321/admin, data in ./.data, reload on changes
+bun run dev        # http://localhost:4321/master, data in ./.data, reload on changes
 bun run typecheck
 bun run start      # production mode, data in the app data folder, opens the browser
 bun run build      # dist/dnd-master-screen-mac and dist/dnd-master-screen.exe
@@ -113,12 +121,12 @@ bun run build      # dist/dnd-master-screen-mac and dist/dnd-master-screen.exe
 
 `build:mac` re-signs the binary ad hoc (`codesign --sign -`): without it recent macOS versions kill the compiled binary on launch. Build it on a Mac.
 
-Environment variables: `PORT` (default 4321), `HOST` (default 127.0.0.1), `DATA_DIR` (app data folder), `NO_BROWSER=1` (do not open the browser).
+Environment variables: `PORT` (default 4321), `DATA_DIR` (app data folder), `NO_BROWSER=1` (do not open the browser).
 
 Code:
 
 - `src/main.ts`: entry point, port selection, opens the browser
-- `src/server.ts`: HTTP API, WebSocket, screen state, active project
+- `src/server.ts`: HTTP API, WebSocket, screen state, active project, other-devices mode and master password
 - `src/store.ts`: app data folder, `settings.json`, `projects.json`
 - `src/projects/folder.ts`: folder scanning and watching
 - `src/sync/`: Notion discovery (`notion.ts`) and incremental download (`index.ts`)

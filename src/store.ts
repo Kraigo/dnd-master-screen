@@ -23,6 +23,10 @@ export interface Settings {
   notionToken: string | null;
   /** Workspace name reported by Notion when the token was saved. */
   notionWorkspace: string | null;
+  /** Other devices on the network may open the app (server listens on all interfaces). */
+  lanEnabled: boolean;
+  /** Hash (Bun.password) of the password other devices need for /master. */
+  masterPasswordHash: string | null;
 }
 
 /** Cache folder of a Notion project (manifest.json + images/). */
@@ -58,13 +62,16 @@ export async function readSettings(): Promise<Settings> {
     activeProjectId: typeof s?.activeProjectId === "string" ? s.activeProjectId : null,
     notionToken: typeof s?.notionToken === "string" && s.notionToken ? s.notionToken : null,
     notionWorkspace: typeof s?.notionWorkspace === "string" ? s.notionWorkspace : null,
+    masterPasswordHash: typeof s?.masterPasswordHash === "string" && s.masterPasswordHash ? s.masterPasswordHash : null,
+    // Never expose the app without a password, even if the file was edited by hand.
+    lanEnabled: s?.lanEnabled === true && typeof s?.masterPasswordHash === "string" && !!s.masterPasswordHash,
   };
 }
 
 export async function updateSettings(patch: Partial<Settings>): Promise<Settings> {
   const next = { ...(await readSettings()), ...patch };
   await ensureDataDir();
-  // The file holds the Notion token: keep it readable by the current user only.
+  // The file holds the Notion token and the password hash: keep it readable by the current user only.
   await writeJsonAtomic(SETTINGS_PATH, next, 0o600);
   return next;
 }

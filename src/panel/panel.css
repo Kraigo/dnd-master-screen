@@ -828,6 +828,43 @@ select {
   color: var(--madder);
 }
 
+.lan-addresses {
+  margin: 0;
+  padding-left: 20px;
+  color: var(--paper-dim);
+  font-size: 0.92rem;
+}
+
+.lan-addresses code {
+  color: var(--paper);
+  user-select: all;
+}
+
+.gate {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: 16px;
+}
+
+.gate-box {
+  display: grid;
+  gap: 12px;
+  width: min(380px, 100%);
+}
+
+.gate-box h1 {
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 1.8rem;
+}
+
+.gate-box .hint,
+.gate-box .dialog-error {
+  margin: 0;
+}
+
 .item:focus-visible {
   outline: 2px solid var(--paper-dim);
   outline-offset: 6px;

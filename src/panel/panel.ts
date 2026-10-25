@@ -49,6 +49,23 @@ const els = {
   tokenForm: $<HTMLFormElement>("token-form"),
   tokenInput: $<HTMLInputElement>("token-input"),
   dialogError: $("dialog-error"),
+  app: document.querySelector<HTMLElement>(".app")!,
+  lanSection: $("lan-section"),
+  lanOff: $("lan-off"),
+  lanOn: $("lan-on"),
+  lanForm: $<HTMLFormElement>("lan-form"),
+  lanPassword: $<HTMLInputElement>("lan-password"),
+  lanAddresses: $("lan-addresses"),
+  lanPasswordForm: $<HTMLFormElement>("lan-password-form"),
+  lanNewPassword: $<HTMLInputElement>("lan-new-password"),
+  lanDisable: $<HTMLButtonElement>("lan-disable"),
+  quitSection: $("quit-section"),
+  quit: $<HTMLButtonElement>("quit"),
+  login: $("login"),
+  loginForm: $<HTMLFormElement>("login-form"),
+  loginPassword: $<HTMLInputElement>("login-password"),
+  loginError: $("login-error"),
+  stopped: $("stopped"),
 };
 
 // ---------------------------------------------------------------------------
@@ -57,8 +74,6 @@ const els = {
 let app: AppState | null = null;
 let manifest: Manifest | null = null;
 let activeGroup = "";
-/** Set when the server refuses the panel (opened from another device). */
-let remoteDenied = false;
 let query = "";
 let screen: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, focusY: 0.5 };
 let sync: SyncStatus | null = null;
@@ -71,6 +86,8 @@ const socket = connectSocket(
   (msg) => onMessage(msg as PanelMessage),
   (connected) => {
     els.conn.hidden = connected;
+    // After a reconnect (server restarted, LAN mode changed) refresh everything.
+    if (connected) void loadState();
   },
 );
 
@@ -90,12 +107,19 @@ function tabKey(): string {
 }
 
 async function loadState(): Promise<void> {
-  const res = await fetch("/api/state", { cache: "no-store" });
-  if (res.status === 403) {
-    remoteDenied = true;
-    renderLibrary();
+  let res: Response;
+  try {
+    res = await fetch("/api/state", { cache: "no-store" });
+  } catch {
+    return; // server down; the socket reconnects and calls this again
+  }
+  if (res.status === 401) {
+    showGate(els.login);
+    els.loginPassword.focus();
     return;
   }
+  if (!res.ok) return;
+  showGate(null);
   const prevProject = app?.activeProjectId;
   app = (await res.json()) as AppState;
   manifest = app.manifest;
@@ -197,13 +221,6 @@ interface EmptyAction {
 /** Message shown instead of the grid when the active project has nothing to show. */
 function emptyState(): { title: string; text: string; actions: EmptyAction[] } | null {
   const project = activeProject();
-  if (remoteDenied) {
-    return {
-      title: "Panel is not available here",
-      text: "Open the DM panel on the computer running the app. This device can show the players' screen only.",
-      actions: [],
-    };
-  }
   if (!app) return { title: "Loading…", text: "", actions: [] };
   if (!project) {
     return {
@@ -237,8 +254,8 @@ function emptyState(): { title: string; text: string; actions: EmptyAction[] } |
         }
       : {
           title: "Notion token needed",
-          text: "Add the integration token in Projects, then sync.",
-          actions: [{ label: "Open Projects", run: openProjects }],
+          text: "Add the integration token in Settings, then sync.",
+          actions: [{ label: "Open Settings", run: openProjects }],
         };
   }
   if (!manifest.groups.some((g) => g.items.length > 0)) {
@@ -541,7 +558,7 @@ function renderSync(): void {
   } else {
     els.syncBar.hidden = true;
     if (!app?.notion.tokenSet) {
-      els.syncStatus.textContent = "Add the Notion token in Projects";
+      els.syncStatus.textContent = "Add the Notion token in Settings";
       els.syncStatus.classList.add("bad");
     } else if (running) {
       els.syncStatus.textContent = "Another project is syncing";
@@ -588,6 +605,14 @@ async function api(method: string, url: string, data?: unknown): Promise<{ ok: b
   } catch {
     return { ok: false, error: "No connection to the app", data: null };
   }
+}
+
+/** Show the login or "stopped" page instead of the panel (null = the panel). */
+function showGate(gate: HTMLElement | null): void {
+  els.app.hidden = gate !== null;
+  els.login.hidden = gate !== els.login;
+  els.stopped.hidden = gate !== els.stopped;
+  if (gate && els.dialog.open) els.dialog.close();
 }
 
 function showDialogError(msg: string): void {
@@ -651,6 +676,28 @@ function renderProjects(): void {
     }),
   );
   els.projectList.hidden = list.length === 0;
+
+  const lan = app?.lan;
+  els.lanSection.hidden = !app?.local;
+  els.quitSection.hidden = !app?.local;
+  els.lanOff.hidden = !!lan?.enabled;
+  els.lanOn.hidden = !lan?.enabled;
+  els.lanAddresses.replaceChildren(
+    ...(lan?.addresses ?? []).flatMap((a) => {
+      const screen = document.createElement("li");
+      screen.innerHTML = "Players' screen: <code></code>";
+      screen.querySelector("code")!.textContent = `${a}/`;
+      const master = document.createElement("li");
+      master.innerHTML = "Master panel (password): <code></code>";
+      master.querySelector("code")!.textContent = `${a}/master`;
+      return [screen, master];
+    }),
+  );
+  if (lan?.enabled && !lan.addresses.length) {
+    const li = document.createElement("li");
+    li.textContent = "No network found. Connect to Wi-Fi.";
+    els.lanAddresses.append(li);
+  }
 
   const notion = app?.notion;
   els.tokenSet.hidden = !notion?.tokenSet;
@@ -754,6 +801,43 @@ els.tokenForm.addEventListener("submit", async (e) => {
   button.textContent = "Save token";
   if (res.ok) els.tokenInput.value = "";
   showDialogError(res.ok ? "" : res.error);
+});
+
+async function setLan(enabled: boolean, password = ""): Promise<boolean> {
+  const res = await api("PUT", "/api/lan", { enabled, password });
+  showDialogError(res.ok ? "" : res.error);
+  // The server restarts its listener; the socket reconnects and reloads the state.
+  return res.ok;
+}
+
+els.lanForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (await setLan(true, els.lanPassword.value)) els.lanPassword.value = "";
+});
+
+els.lanPasswordForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  if (await setLan(true, els.lanNewPassword.value)) {
+    els.lanNewPassword.value = "";
+    showDialogError("");
+  }
+});
+
+els.lanDisable.addEventListener("click", () => void setLan(false));
+
+els.quit.addEventListener("click", async () => {
+  if (!confirm("Quit the app? The players' screen goes dark.")) return;
+  const res = await api("POST", "/api/quit");
+  if (res.ok) showGate(els.stopped);
+  else showDialogError(res.error);
+});
+
+els.loginForm.addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const res = await api("POST", "/api/login", { password: els.loginPassword.value });
+  els.loginError.textContent = res.error;
+  els.loginError.hidden = res.ok;
+  if (res.ok) location.reload(); // the socket needs the new session cookie
 });
 
 els.tokenRemove.addEventListener("click", async () => {

@@ -4,7 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="color-scheme" content="dark" />
-    <title>DM Panel</title>
+    <title>Master</title>
     <link
       rel="icon"
       href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='6' width='26' height='18' rx='2' fill='%23c79a4b'/%3E%3Crect x='12' y='25' width='8' height='3' fill='%23c79a4b'/%3E%3C/svg%3E"
@@ -17,7 +17,7 @@
         <div class="project-bar">
           <label class="visually-hidden" for="project-select">Project</label>
           <select id="project-select" class="project-select"></select>
-          <button type="button" class="quiet" id="btn-projects">Projects</button>
+          <button type="button" class="quiet" id="btn-projects">Settings</button>
         </div>
         <section class="live" aria-labelledby="live-title">
           <h1 id="live-title" class="live-title">On screen now</h1>
@@ -81,7 +81,7 @@
 
     <dialog class="projects" id="projects" aria-labelledby="projects-title">
       <header class="projects-head">
-        <h2 id="projects-title">Projects</h2>
+        <h2 id="projects-title">Settings</h2>
         <button type="button" class="quiet" id="projects-close">Close</button>
       </header>
       <p class="projects-intro">
@@ -136,8 +136,58 @@
         </form>
       </section>
 
+      <section class="projects-section" id="lan-section">
+        <h3>Other devices</h3>
+        <div id="lan-off">
+          <p class="hint">
+            Only this computer can open the app now. Turn this on to show the players' screen on a TV or another
+            laptop, or to run the master panel from a tablet. The master panel on other devices asks for this password.
+          </p>
+          <form class="row" id="lan-form">
+            <input id="lan-password" class="field" type="password" placeholder="Master password" autocomplete="new-password" required minlength="4" />
+            <button type="submit" class="act">Allow other devices</button>
+          </form>
+        </div>
+        <div id="lan-on" hidden>
+          <p class="hint">Devices on the same Wi-Fi can open:</p>
+          <ul class="lan-addresses" id="lan-addresses"></ul>
+          <form class="row" id="lan-password-form">
+            <input id="lan-new-password" class="field" type="password" placeholder="New master password" autocomplete="new-password" required minlength="4" />
+            <button type="submit" class="act">Change password</button>
+          </form>
+          <div class="row">
+            <button type="button" class="act" id="lan-disable">Only this computer</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="projects-section" id="quit-section">
+        <h3>Stop the app</h3>
+        <p class="hint">Closes the app on this computer; the players' screen goes dark. Start it again from the app file.</p>
+        <div class="row">
+          <button type="button" class="act" id="quit">Quit app</button>
+        </div>
+      </section>
+
       <p class="dialog-error" id="dialog-error" role="alert" hidden></p>
     </dialog>
+
+    <main class="gate" id="login" hidden>
+      <form class="gate-box" id="login-form">
+        <h1>Master panel</h1>
+        <p class="hint">Enter the master password set on the computer running the app.</p>
+        <input id="login-password" class="field" type="password" placeholder="Master password" autocomplete="current-password" required />
+        <button type="submit" class="act">Open</button>
+        <p class="dialog-error" id="login-error" role="alert" hidden></p>
+      </form>
+    </main>
+
+    <main class="gate" id="stopped" hidden>
+      <div class="gate-box">
+        <h1>The app is stopped</h1>
+        <p class="hint">You can close this tab. This page comes back by itself when the app starts again.</p>
+      </div>
+    </main>
 
     <script type="module" src="./panel.ts"></script>
   </body>

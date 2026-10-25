@@ -43,6 +43,14 @@ export interface AppState {
   folderError: string | null;
   sync: SyncStatus;
   notion: { tokenSet: boolean; workspace: string | null };
+  /** Access from other devices on the network. */
+  lan: {
+    enabled: boolean;
+    /** Addresses other devices can use, e.g. "http://192.168.1.20:4321". */
+    addresses: string[];
+  };
+  /** The request comes from the computer running the app (may change LAN mode, quit). */
+  local: boolean;
 }
 
 export type ScreenMode = "image" | "black";

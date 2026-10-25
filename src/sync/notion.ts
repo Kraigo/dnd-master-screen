@@ -60,7 +60,7 @@ export function describeNotionError(e: unknown): string {
   if (isNotionClientError(e)) {
     switch (e.code) {
       case APIErrorCode.Unauthorized:
-        return "401: invalid token. Paste the integration token again in Projects";
+        return "401: invalid token. Paste the integration token again in Settings";
       case APIErrorCode.ObjectNotFound:
         return "404: no access. Connect the integration to the campaign page (••• → Connections)";
       case APIErrorCode.RestrictedResource:
