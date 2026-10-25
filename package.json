@@ -11,7 +11,7 @@
     "build:mac": "NODE_ENV=production bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile dist/dnd-master-screen-mac && codesign --force --sign - dist/dnd-master-screen-mac",
     "build:win": "NODE_ENV=production bun build --compile --minify --target=bun-windows-x64 src/main.ts --outfile dist/dnd-master-screen.exe",
     "build": "bun run build:mac && bun run build:win",
-    "package": "bun run build && cd dist && rm -f dnd-master-screen-mac.zip && ditto -c -k dnd-master-screen-mac dnd-master-screen-mac.zip"
+    "package": "bun run build && cd dist && rm -f *.zip && ditto -c -k dnd-master-screen-mac dnd-master-screen-mac.zip && zip -q -9 dnd-master-screen-windows.zip dnd-master-screen.exe"
   },
   "engines": {
     "bun": ">=1.2.0"
