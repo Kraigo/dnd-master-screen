@@ -84,7 +84,7 @@ Controls:
 - zoom for maps: the 1×–4× slider or a click on the preview (centres the players' screen on that point; at 1× it also zooms to 2×). `+` `−` change zoom, `0` and "Reset" reset
 - `/`: search by title
 
-Letter shortcuts also work with a non-Latin (e.g. Russian) keyboard layout.
+Letter shortcuts also work with a non-Latin (e.g. Ukrainian) keyboard layout.
 
 ### Players' screen on another device
 

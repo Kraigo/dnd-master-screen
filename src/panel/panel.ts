@@ -457,7 +457,7 @@ document.addEventListener("keydown", (e) => {
   }
   if (typing) return;
 
-  // e.code keeps shortcuts working with the Russian keyboard layout too.
+  // e.code keeps shortcuts working with non-Latin keyboard layouts too.
   switch (e.code) {
     case "KeyB":
       e.preventDefault();
