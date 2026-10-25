@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="dark" />
+    <title>DM Panel</title>
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='6' width='26' height='18' rx='2' fill='%23c79a4b'/%3E%3Crect x='12' y='25' width='8' height='3' fill='%23c79a4b'/%3E%3C/svg%3E"
+    />
+    <link rel="stylesheet" href="./panel.css" />
+  </head>
+  <body>
+    <div class="app">
+      <aside class="rail">
+        <section class="live" aria-labelledby="live-title">
+          <h1 id="live-title" class="live-title">On screen now</h1>
+          <div class="preview" id="preview" data-mode="black" title="Click to choose the zoom center">
+            <img id="preview-img" alt="" draggable="false" />
+            <div class="preview-veil" id="preview-veil"><span>Blacked out</span></div>
+            <div class="preview-focus" id="preview-focus" hidden></div>
+          </div>
+          <p class="live-label" id="live-label">Nothing shown</p>
+
+          <div class="zoom" id="zoom">
+            <label for="zoom-range">Zoom</label>
+            <input id="zoom-range" type="range" min="1" max="4" step="0.25" value="1" />
+            <output id="zoom-value" for="zoom-range">1×</output>
+            <button type="button" class="quiet" id="zoom-reset">Reset</button>
+          </div>
+
+          <div class="actions">
+            <button type="button" class="act act-black" id="btn-black">Black out</button>
+            <button type="button" class="act" id="btn-restore">Show again</button>
+          </div>
+
+          <dl class="keys">
+            <div><dt>B, Esc</dt><dd>black out</dd></div>
+            <div><dt>R</dt><dd>show again</dd></div>
+            <div><dt>← →</dt><dd>prev / next image</dd></div>
+            <div><dt>1–9</dt><dd>image by number</dd></div>
+            <div><dt>+ − 0</dt><dd>zoom</dd></div>
+          </dl>
+        </section>
+
+        <section class="rail-foot">
+          <div class="screen-link">
+            <span class="dot" id="screen-dot"></span>
+            <span id="screen-status">Players' screen not open</span>
+            <a href="/" target="players-screen" id="open-screen">Open players' screen</a>
+          </div>
+          <div class="sync">
+            <button type="button" class="act act-sync" id="btn-sync">Sync</button>
+            <p class="sync-status" id="sync-status">Not synced yet</p>
+            <div class="sync-bar" id="sync-bar" hidden><span></span></div>
+            <details class="sync-errors" id="sync-errors" hidden>
+              <summary></summary>
+              <ul></ul>
+            </details>
+          </div>
+          <p class="conn" id="conn" hidden>No connection to the server, reconnecting</p>
+        </section>
+      </aside>
+
+      <main class="library">
+        <header class="library-head">
+          <nav class="tabs" id="tabs" role="tablist" aria-label="Sections"></nav>
+          <input id="search" class="search" type="search" placeholder="Search by title" autocomplete="off" spellcheck="false" />
+        </header>
+        <div class="grid" id="grid" role="tabpanel"></div>
+        <div class="empty" id="empty" hidden></div>
+      </main>
+    </div>
+    <script type="module" src="./panel.ts"></script>
+  </body>
+</html>
