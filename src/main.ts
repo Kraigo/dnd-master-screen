@@ -18,12 +18,31 @@ async function runningInstance(port: number): Promise<boolean> {
   }
 }
 
+/**
+ * Is anything else listening on this port on 127.0.0.1? Needed because binding
+ * 0.0.0.0 (other-devices mode) can succeed next to a program that already holds
+ * 127.0.0.1 on the same port, and then "localhost" would reach that program.
+ */
+async function portTaken(port: number): Promise<boolean> {
+  try {
+    const socket = await Bun.connect({ hostname: "127.0.0.1", port, socket: { data() {} } });
+    socket.end();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 async function main(): Promise<void> {
   for (let port = FIRST_PORT; port < FIRST_PORT + 10; port++) {
     if (await runningInstance(port)) {
       console.log(`Already running at http://localhost:${port}/master`);
       if (OPEN_BROWSER) openBrowser(`http://localhost:${port}/master`);
       return;
+    }
+    if (await portTaken(port)) {
+      console.log(`Port ${port} is used by another program, trying ${port + 1}.`);
+      continue;
     }
     try {
       const server = await startServer(port);
