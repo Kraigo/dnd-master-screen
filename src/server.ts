@@ -28,6 +28,7 @@ import type {
 } from "./shared/types.ts";
 import { clamp, MAX_ZOOM, MIN_ZOOM } from "./shared/view.ts";
 import {
+  clearData,
   ensureDataDir,
   newProjectId,
   projectDir,
@@ -344,6 +345,70 @@ async function createProject(input: Record<string, unknown>): Promise<Project | 
 }
 
 // ---------------------------------------------------------------------------
+// Actions shared by the HTTP API and the console (src/console.ts)
+
+/** Turn access from other devices on/off and/or set a new master password. Call rebind() afterwards. */
+export async function setOtherDevices(enabled: boolean, password = ""): Promise<string | null> {
+  if (password && password.length < MIN_PASSWORD) return `The password needs at least ${MIN_PASSWORD} characters`;
+  if (enabled && !password && !settings.masterPasswordHash) return "Set a password first";
+  const patch: Partial<Settings> = { lanEnabled: enabled };
+  if (password) {
+    patch.masterPasswordHash = await Bun.password.hash(password);
+    sessions = new Set(); // a new password logs every other device out
+  }
+  if (!enabled) sessions = new Set();
+  settings = await updateSettings(patch);
+  publishPanel({ type: "manifest" });
+  return null;
+}
+
+export function otherDevicesState(): { enabled: boolean; passwordSet: boolean } {
+  return { enabled: settings.lanEnabled, passwordSet: !!settings.masterPasswordHash };
+}
+
+/** Create a project, make it active and, for Notion, start the first sync. */
+export async function addProject(input: Record<string, unknown>): Promise<Project | string> {
+  const created = await createProject(input);
+  if (typeof created === "string") return created;
+  projects = [...projects, created];
+  await saveProjects();
+  await activate(created);
+  if (created.type === "notion" && settings.notionToken) startSync(created);
+  return created;
+}
+
+export function projectList(): { projects: Project[]; activeId: string | null } {
+  return { projects, activeId: active?.id ?? null };
+}
+
+export async function openProject(id: string): Promise<boolean> {
+  const p = findProject(id);
+  if (!p) return false;
+  await activate(p);
+  return true;
+}
+
+/** Forget every project, the Notion token and the master password. Linked folders are not touched. */
+export async function clearAllData(): Promise<string | null> {
+  if (syncStatus.running) return "Wait for the sync to finish";
+  await activate(null);
+  await clearData();
+  projects = [];
+  settings = await readSettings();
+  sessions = new Set();
+  syncStatus = idleStatus();
+  await rebind();
+  publishPanel({ type: "manifest" });
+  return null;
+}
+
+export function quitApp(reason: string): never {
+  console.log(`\n${reason}`);
+  if (process.stdin.isTTY) process.stdin.setRawMode(false);
+  process.exit(0);
+}
+
+// ---------------------------------------------------------------------------
 // Server
 
 function listenHost(): string {
@@ -361,7 +426,7 @@ export function logLan(): void {
 }
 
 /** Restart the listener after LAN mode changed (Bun cannot change the address of a running server). */
-async function rebind(): Promise<void> {
+export async function rebind(): Promise<void> {
   if (!server || server.hostname === listenHost()) return;
   const port = server.port ?? 0;
   server.stop(true);
@@ -422,19 +487,9 @@ function createServer(hostname: string, port: number): Server<WsData> {
       "/api/lan": {
         PUT: localOnly(async (req) => {
           const input = await body(req);
-          const enabled = input.enabled === true;
           const password = typeof input.password === "string" ? input.password : "";
-          if (password && password.length < MIN_PASSWORD) {
-            return json({ error: `The password needs at least ${MIN_PASSWORD} characters` }, 400);
-          }
-          if (enabled && !password && !settings.masterPasswordHash) return json({ error: "Set a password first" }, 400);
-          const patch: Partial<Settings> = { lanEnabled: enabled };
-          if (password) {
-            patch.masterPasswordHash = await Bun.password.hash(password);
-            sessions = new Set(); // a new password logs every other device out
-          }
-          if (!enabled) sessions = new Set();
-          settings = await updateSettings(patch);
+          const error = await setOtherDevices(input.enabled === true, password);
+          if (error) return json({ error }, 400);
           // Answer first: rebinding closes every open connection, this one included.
           setTimeout(() => void rebind(), 100);
           return json({ ok: true });
@@ -443,20 +498,15 @@ function createServer(hostname: string, port: number): Server<WsData> {
 
       "/api/quit": {
         POST: localOnly(() => {
-          console.log("Stopped from the master panel.");
-          setTimeout(() => process.exit(0), 200);
+          setTimeout(() => quitApp("Stopped from the master panel."), 200);
           return json({ ok: true });
         }),
       },
 
       "/api/projects": {
         POST: guarded(async (req) => {
-          const created = await createProject(await body(req));
+          const created = await addProject(await body(req));
           if (typeof created === "string") return json({ error: created }, 400);
-          projects = [...projects, created];
-          await saveProjects();
-          await activate(created);
-          if (created.type === "notion" && settings.notionToken) startSync(created);
           return json({ project: created }, 201);
         }),
       },
@@ -487,9 +537,7 @@ function createServer(hostname: string, port: number): Server<WsData> {
 
       "/api/projects/:id/activate": {
         POST: guarded(async (req) => {
-          const p = findProject(req.params.id);
-          if (!p) return json({ error: "Project not found" }, 404);
-          await activate(p);
+          if (!(await openProject(req.params.id ?? ""))) return json({ error: "Project not found" }, 404);
           return json({ ok: true });
         }),
       },

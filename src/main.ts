@@ -1,6 +1,7 @@
 // Entry point for `bun run start` and the standalone executable.
 // Starts the server (or reuses one that is already running) and opens the DM panel.
 
+import { startConsole } from "./console.ts";
 import { openBrowser } from "./os/open-browser.ts";
 import { APP_ID, logLan, startServer } from "./server.ts";
 import { DATA_DIR } from "./store.ts";
@@ -33,8 +34,9 @@ async function main(): Promise<void> {
       console.log(`  Players' screen: ${base}/`);
       logLan();
       console.log(`\nData folder: ${DATA_DIR}`);
-      console.log("Keep this window open during the game. To stop: close it, or Quit in the master panel.");
+      console.log("Keep this window open during the game. To stop: close it, press Q, or Quit in the master panel.");
       if (OPEN_BROWSER) openBrowser(`${base}/master`);
+      startConsole(`${base}/master`);
       return;
     } catch (e) {
       if ((e as { code?: string }).code !== "EADDRINUSE") throw e;

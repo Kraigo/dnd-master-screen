@@ -100,3 +100,11 @@ export function newProjectId(): string {
 export async function removeProjectCache(id: string): Promise<void> {
   await rm(projectDir(id), { recursive: true, force: true });
 }
+
+/** Delete settings, the project list and all Notion caches. */
+export async function clearData(): Promise<void> {
+  await rm(join(DATA_DIR, "projects"), { recursive: true, force: true });
+  await rm(SETTINGS_PATH, { force: true });
+  await rm(PROJECTS_PATH, { force: true });
+  await ensureDataDir();
+}

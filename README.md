@@ -16,7 +16,22 @@ Download the file for your system and put it anywhere (e.g. Applications or Desk
 - macOS (Apple Silicon): `dnd-master-screen-mac`
 - Windows: `dnd-master-screen.exe`
 
-Run it. A console window opens and the master panel opens in your browser at `http://localhost:4321/master`. Keep the console window open during the game. To stop the app, close that window (or press Ctrl+C in it), or use **Settings → Quit app** in the master panel. Running the app again while it is already running just opens the panel.
+Run it. A console window opens and the master panel opens in your browser at `http://localhost:4321/master`. Keep the console window open during the game. To stop the app, close that window, press Q (or Ctrl+C) in it, or use **Settings → Quit app** in the master panel. Running the app again while it is already running just opens the panel.
+
+### Console commands
+
+The console window also takes single-key commands (they work with a Cyrillic keyboard layout too):
+
+| Key | Action |
+|---|---|
+| O | open the master panel in the browser |
+| N | other devices on / off (asks for a master password the first time) |
+| P | set or change the master password |
+| F | add a folder project: drag the folder into the window and press Enter, or press Enter to pick it in a dialog |
+| L | list projects and switch to one by number |
+| C | clear all app data: projects, Notion token, master password, downloaded Notion images (asks to type `clear`; your image folders are not touched) |
+| H | show the commands |
+| Q | quit (Ctrl+C works too) |
 
 The files are not signed, so the system warns on first launch:
 
@@ -126,6 +141,7 @@ Environment variables: `PORT` (default 4321), `DATA_DIR` (app data folder), `NO_
 Code:
 
 - `src/main.ts`: entry point, port selection, opens the browser
+- `src/console.ts`: single-key console commands
 - `src/server.ts`: HTTP API, WebSocket, screen state, active project, other-devices mode and master password
 - `src/store.ts`: app data folder, `settings.json`, `projects.json`
 - `src/projects/folder.ts`: folder scanning and watching
