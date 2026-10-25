@@ -1,4 +1,3 @@
-import type { GroupConfig } from "../config.ts";
 import type { ImageData } from "./download.ts";
 
 /** One item discovered while listing a group, before its image is downloaded. */
@@ -12,7 +11,16 @@ export interface PlannedItem {
   fetchImage: (() => Promise<ImageData>) | null;
 }
 
+/** A tab found in the source. `list` may fail on its own without failing the whole sync. */
+export interface PlannedGroup {
+  id: string;
+  label: string;
+  /** Drop the tab from the panel when it has no items. */
+  hideIfEmpty?: boolean;
+  list: () => Promise<PlannedItem[]>;
+}
+
 export interface ImageSource {
-  /** List every item of a group. Throws if the group cannot be read at all. */
-  listGroup(group: GroupConfig, log: (msg: string) => void): Promise<PlannedItem[]>;
+  /** Discover the tabs of a project. Throws if the project cannot be read at all. */
+  listGroups(rootId: string, log: (msg: string) => void): Promise<PlannedGroup[]>;
 }

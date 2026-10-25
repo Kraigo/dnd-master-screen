@@ -14,6 +14,11 @@
   <body>
     <div class="app">
       <aside class="rail">
+        <div class="project-bar">
+          <label class="visually-hidden" for="project-select">Project</label>
+          <select id="project-select" class="project-select"></select>
+          <button type="button" class="quiet" id="btn-projects">Projects</button>
+        </div>
         <section class="live" aria-labelledby="live-title">
           <h1 id="live-title" class="live-title">On screen now</h1>
           <div class="preview" id="preview" data-mode="black" title="Click to choose the zoom center">
@@ -50,9 +55,10 @@
             <span id="screen-status">Players' screen not open</span>
             <a href="/" target="players-screen" id="open-screen">Open players' screen</a>
           </div>
-          <div class="sync">
+          <div class="sync" id="sync" hidden>
             <button type="button" class="act act-sync" id="btn-sync">Sync</button>
             <p class="sync-status" id="sync-status">Not synced yet</p>
+            <p class="sync-path" id="sync-path" hidden></p>
             <div class="sync-bar" id="sync-bar" hidden><span></span></div>
             <details class="sync-errors" id="sync-errors" hidden>
               <summary></summary>
@@ -72,6 +78,67 @@
         <div class="empty" id="empty" hidden></div>
       </main>
     </div>
+
+    <dialog class="projects" id="projects" aria-labelledby="projects-title">
+      <header class="projects-head">
+        <h2 id="projects-title">Projects</h2>
+        <button type="button" class="quiet" id="projects-close">Close</button>
+      </header>
+      <p class="projects-intro">
+        A project is the set of images for one game. Link a folder from your computer, or a Notion page.
+      </p>
+      <ul class="project-list" id="project-list"></ul>
+
+      <section class="projects-section">
+        <h3>Add a folder</h3>
+        <p class="hint">
+          Images stay where they are. Subfolders become tabs (Characters, Maps…), image names become captions.
+          New files show up by themselves.
+        </p>
+        <div class="row">
+          <button type="button" class="act" id="add-folder">Choose folder…</button>
+          <button type="button" class="quiet" id="add-folder-type">Type a path instead</button>
+        </div>
+        <form class="row" id="folder-path-form" hidden>
+          <input id="folder-path" class="field" type="text" placeholder="/Users/you/Pictures/My campaign" autocomplete="off" spellcheck="false" />
+          <button type="submit" class="act">Add</button>
+        </form>
+      </section>
+
+      <section class="projects-section">
+        <h3>Add a Notion campaign</h3>
+        <p class="hint">
+          Every database on the page becomes a tab (one image per entry: its cover, or the first image on its page).
+          Images placed on the page itself and its subpages go to "Pages".
+        </p>
+        <form class="row" id="notion-form">
+          <input id="notion-link" class="field" type="url" placeholder="https://www.notion.so/…" autocomplete="off" spellcheck="false" />
+          <button type="submit" class="act" id="notion-add">Add</button>
+        </form>
+      </section>
+
+      <section class="projects-section">
+        <h3>Notion token</h3>
+        <div id="token-set" hidden>
+          <p class="hint" id="token-status"></p>
+          <button type="button" class="quiet" id="token-remove">Remove token</button>
+        </div>
+        <form id="token-form">
+          <ol class="steps">
+            <li>Open <a href="https://www.notion.so/profile/integrations" target="_blank" rel="noreferrer">notion.so/profile/integrations</a>, create an Internal integration with "Read content".</li>
+            <li>Copy its secret (starts with <code>ntn_</code>) and paste it here.</li>
+            <li>On the campaign page in Notion: ••• → Connections → add the integration.</li>
+          </ol>
+          <div class="row">
+            <input id="token-input" class="field" type="password" placeholder="ntn_…" autocomplete="off" spellcheck="false" />
+            <button type="submit" class="act">Save token</button>
+          </div>
+        </form>
+      </section>
+
+      <p class="dialog-error" id="dialog-error" role="alert" hidden></p>
+    </dialog>
+
     <script type="module" src="./panel.ts"></script>
   </body>
 </html>

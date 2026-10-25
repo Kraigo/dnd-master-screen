@@ -1,17 +1,22 @@
-// Sync orchestrator shared by the CLI (`bun run sync`) and POST /api/sync.
-// Lists every configured group, downloads changed images into cache/images,
-// writes cache/manifest.json and removes files no longer referenced.
+// Notion sync for one project, started from the DM panel.
+// Discovers the tabs under the campaign root page, downloads changed images into
+// <project dir>/images, writes <project dir>/manifest.json and removes files no
+// longer referenced.
 
 import { mkdir, readdir, rename, unlink } from "node:fs/promises";
 import { join } from "node:path";
-import { IMAGES_DIR, loadConfig } from "../config.ts";
 import { readManifest, writeManifest } from "../manifest.ts";
 import type { Manifest, ManifestGroup, ManifestItem, SyncStatus } from "../shared/types.ts";
 import { cacheFileName } from "./download.ts";
-import type { ImageSource, PlannedItem } from "./source.ts";
+import { describeNotionError, NotionSource } from "./notion.ts";
+import type { PlannedGroup, PlannedItem } from "./source.ts";
 
 export interface SyncOptions {
-  mock?: boolean;
+  projectId: string;
+  token: string;
+  rootPageId: string;
+  /** Cache folder of the project. */
+  dir: string;
   log?: (msg: string) => void;
   onProgress?: (status: SyncStatus) => void;
 }
@@ -23,6 +28,7 @@ class NothingReadError extends Error {}
 
 export function idleStatus(): SyncStatus {
   return {
+    projectId: null,
     running: false,
     phase: "idle",
     done: 0,
@@ -37,32 +43,9 @@ export function idleStatus(): SyncStatus {
   };
 }
 
-export function isMockMode(): boolean {
-  const v = (process.env.MOCK ?? "").toLowerCase();
-  return v === "1" || v === "true" || v === "yes";
-}
-
-async function makeSource(mock: boolean, log: (m: string) => void): Promise<ImageSource> {
-  if (mock) {
-    const { MockSource } = await import("./mock.ts");
-    const src = new MockSource();
-    log(`MOCK: images from ${src.dir}`);
-    return src;
-  }
-  const token = process.env.NOTION_TOKEN?.trim();
-  if (!token) throw new Error("NOTION_TOKEN is not set. Copy .env.example to .env and paste the integration token");
-  const { NotionSource } = await import("./notion.ts");
-  return new NotionSource(token);
-}
-
-async function describeError(e: unknown, mock: boolean): Promise<string> {
-  if (mock || e instanceof NothingReadError) return e instanceof Error ? e.message : String(e);
-  const { describeNotionError } = await import("./notion.ts");
+function describeError(e: unknown): string {
+  if (e instanceof NothingReadError) return e.message;
   return describeNotionError(e);
-}
-
-async function fileExists(name: string | null): Promise<boolean> {
-  return name !== null && (await Bun.file(join(IMAGES_DIR, name)).exists());
 }
 
 async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<void>): Promise<void> {
@@ -76,44 +59,47 @@ async function runPool<T>(items: T[], limit: number, fn: (item: T) => Promise<vo
   await Promise.all(workers);
 }
 
-export async function runSync(opts: SyncOptions = {}): Promise<SyncStatus> {
-  const mock = opts.mock ?? isMockMode();
+export async function runSync(opts: SyncOptions): Promise<SyncStatus> {
   const log = opts.log ?? ((m: string) => console.log(m));
-  const status: SyncStatus = { ...idleStatus(), running: true, phase: "listing", startedAt: new Date().toISOString() };
+  const imagesDir = join(opts.dir, "images");
+  const status: SyncStatus = { ...idleStatus(), projectId: opts.projectId, running: true, phase: "listing", startedAt: new Date().toISOString() };
   const emit = () => opts.onProgress?.({ ...status, failures: [...status.failures] });
+  const fileExists = async (name: string | null) => name !== null && (await Bun.file(join(imagesDir, name)).exists());
   emit();
 
   try {
-    await mkdir(IMAGES_DIR, { recursive: true });
-    const config = await loadConfig();
-    const source = await makeSource(mock, log);
-    const prevRaw = await readManifest();
-    const prev = prevRaw && prevRaw.mode === (mock ? "mock" : "notion") ? prevRaw : null;
+    await mkdir(imagesDir, { recursive: true });
+    const source = new NotionSource(opts.token);
+    const prev = await readManifest(opts.dir);
     const prevItems = new Map<string, ManifestItem>();
     for (const g of prev?.groups ?? []) for (const it of g.items) prevItems.set(it.id, it);
 
+    status.message = "Reading the campaign page";
+    emit();
+    const discovered: PlannedGroup[] = await source.listGroups(opts.rootPageId, log);
+
     // 1. List all groups. A group that fails keeps its previous items.
-    const planned: { group: ManifestGroup; plan: PlannedItem[] }[] = [];
-    for (const g of config.groups) {
+    const planned: { group: ManifestGroup; plan: PlannedItem[]; hideIfEmpty: boolean }[] = [];
+    for (const g of discovered) {
       log(`Reading "${g.label}"...`);
       status.message = `Reading "${g.label}"`;
       emit();
       try {
-        const plan = await source.listGroup(g, log);
-        planned.push({ group: { id: g.id, label: g.label, items: [] }, plan });
+        const plan = await g.list();
+        planned.push({ group: { id: g.id, label: g.label, items: [] }, plan, hideIfEmpty: !!g.hideIfEmpty });
         log(`  found: ${plan.length}`);
       } catch (e) {
-        const msg = await describeError(e, mock);
+        const msg = describeError(e);
         log(`  ERROR "${g.label}": ${msg}`);
         status.failures.push({ label: g.label, error: msg });
         const old = prev?.groups.find((pg) => pg.id === g.id);
-        planned.push({ group: { id: g.id, label: g.label, items: old?.items ?? [], error: msg }, plan: [] });
+        planned.push({ group: { id: g.id, label: g.label, items: old?.items ?? [], error: msg }, plan: [], hideIfEmpty: false });
       }
     }
 
-    // Nothing could be read (offline, wrong token, integration not connected):
+    // Nothing could be read (offline, integration not connected to the databases):
     // leave the existing cache untouched instead of replacing it with an empty one.
-    if (planned.every((p) => p.group.error)) {
+    if (planned.length > 0 && planned.every((p) => p.group.error)) {
       throw new NothingReadError(`Could not read any section: ${status.failures[0]?.error ?? "unknown error"}`);
     }
 
@@ -144,9 +130,9 @@ export async function runSync(opts: SyncOptions = {}): Promise<SyncStatus> {
         } else {
           const img = await item.fetchImage();
           const file = cacheFileName(item.id, item.lastEditedTime, img.ext);
-          const part = join(IMAGES_DIR, `${file}.part`);
+          const part = join(imagesDir, `${file}.part`);
           await Bun.write(part, img.bytes);
-          await rename(part, join(IMAGES_DIR, file));
+          await rename(part, join(imagesDir, file));
           results.set(item, { ...base, file });
           status.downloaded += 1;
           log(`  downloaded: ${item.label}`);
@@ -170,28 +156,25 @@ export async function runSync(opts: SyncOptions = {}): Promise<SyncStatus> {
     const manifest: Manifest = {
       version: 1,
       syncedAt: new Date().toISOString(),
-      mode: mock ? "mock" : "notion",
-      groups: planned.map((p) => p.group),
+      mode: "notion",
+      groups: planned.filter((p) => !(p.hideIfEmpty && p.group.items.length === 0)).map((p) => p.group),
     };
-    await writeManifest(manifest);
+    await writeManifest(opts.dir, manifest);
 
     // 3. Remove files nothing points to any more.
     const keep = new Set(manifest.groups.flatMap((g) => g.items.map((i) => i.file)).filter(Boolean));
-    for (const name of await readdir(IMAGES_DIR)) {
+    for (const name of await readdir(imagesDir)) {
       if (!keep.has(name)) {
-        await unlink(join(IMAGES_DIR, name)).catch(() => {});
+        await unlink(join(imagesDir, name)).catch(() => {});
         status.removed += 1;
       }
     }
 
     status.phase = "done";
-    status.message =
-      status.failures.length === 0
-        ? "Done"
-        : `Done with errors: ${status.failures.length}`;
+    status.message = status.failures.length === 0 ? "Done" : `Done with errors: ${status.failures.length}`;
   } catch (e) {
     status.phase = "error";
-    status.message = await describeError(e, mock);
+    status.message = describeError(e);
     log(`ERROR: ${status.message}`);
   }
   status.running = false;

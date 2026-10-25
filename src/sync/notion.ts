@@ -1,12 +1,13 @@
-// Notion source. Loaded only by `sync` (dynamic import), never by the running
-// game server, so showing images never talks to Notion.
+// Notion source. Used only when the DM presses Sync; showing images never
+// talks to Notion, it reads the project cache.
 //
 // Privacy: we only read page titles, covers and image blocks. Data source
 // queries and page retrievals use `filter_properties: ["title"]` (the title
 // property's id is always "title"), so other properties are not even returned.
 // `blocks.children.list` necessarily returns all top-level blocks of a page
-// (the city page, and data source pages that have no cover); everything except
-// image blocks is dropped immediately and never stored.
+// (the root page, its subpages, and database pages that have no cover); everything
+// except image blocks and the ids of databases/subpages is dropped immediately
+// and never stored.
 
 import {
   APIErrorCode,
@@ -17,9 +18,8 @@ import {
   iteratePaginatedAPI,
   LogLevel,
 } from "@notionhq/client";
-import type { GroupConfig, SourceConfig } from "../config.ts";
 import { downloadImage } from "./download.ts";
-import type { ImageSource, PlannedItem } from "./source.ts";
+import type { ImageSource, PlannedGroup, PlannedItem } from "./source.ts";
 
 type Page = Extract<Awaited<ReturnType<Client["pages"]["retrieve"]>>, { properties: unknown }>;
 type Block = Extract<
@@ -32,11 +32,8 @@ function plain(rt: RichText | undefined): string {
   return (rt ?? []).map((t) => t.plain_text).join("").trim();
 }
 
-function pageTitle(page: Page, preferred?: string): string {
-  const props = page.properties;
-  const named = preferred ? props[preferred] : undefined;
-  if (named?.type === "title") return plain(named.title);
-  for (const p of Object.values(props)) {
+function pageTitle(page: Page): string {
+  for (const p of Object.values(page.properties)) {
     if (p.type === "title") return plain(p.title);
   }
   return "";
@@ -63,9 +60,9 @@ export function describeNotionError(e: unknown): string {
   if (isNotionClientError(e)) {
     switch (e.code) {
       case APIErrorCode.Unauthorized:
-        return "401: invalid token. Check NOTION_TOKEN in .env";
+        return "401: invalid token. Paste the integration token again in Projects";
       case APIErrorCode.ObjectNotFound:
-        return "404: no access. Connect the integration to the campaign root page (••• → Connections)";
+        return "404: no access. Connect the integration to the campaign page (••• → Connections)";
       case APIErrorCode.RestrictedResource:
         return "403: the integration has no read permission";
       case APIErrorCode.RateLimited:
@@ -89,23 +86,76 @@ export class NotionSource implements ImageSource {
     this.notion = new Client({ auth: token, timeoutMs: 60_000, logLevel: LogLevel.ERROR });
   }
 
-  async listGroup(group: GroupConfig, log: (msg: string) => void): Promise<PlannedItem[]> {
-    const items: PlannedItem[] = [];
-    for (const source of group.sources) {
-      items.push(...(await this.listSource(source, log)));
-    }
-    return items;
+  /** Title of a page, used as the default project name. */
+  async titleOf(pageId: string): Promise<string> {
+    return pageTitle(await this.retrievePage(pageId));
   }
 
-  private async listSource(source: SourceConfig, log: (msg: string) => void): Promise<PlannedItem[]> {
-    switch (source.type) {
-      case "dataSource":
-        return this.listDataSource(source.dataSourceId, source.titleProperty);
-      case "pageImages":
-        return this.listPageImages(source.pageId, log);
-      case "pageCover":
-        return this.listPageCover(source.pageId, source.label);
+  /** Check the token; returns the workspace name the integration belongs to. */
+  async whoAmI(): Promise<string> {
+    const me = await this.notion.users.me({});
+    if (me.type === "bot") return me.bot.workspace_name || me.name || "Notion";
+    return me.name || "Notion";
+  }
+
+  /**
+   * Find every tab under the campaign root page:
+   * - each database placed on the page (also inside columns) -> one tab per data source,
+   *   one image per row (cover, or the first image on the row's page);
+   * - images placed directly on the root page and on its subpages, plus the root
+   *   cover -> one "Pages" tab.
+   */
+  async listGroups(rootPageId: string, log: (msg: string) => void): Promise<PlannedGroup[]> {
+    const root = await this.retrievePage(rootPageId);
+    const rootTitle = pageTitle(root) || "Image";
+    const databases: string[] = [];
+    const pages: string[] = [];
+    const rootImages: Block[] = [];
+
+    const scan = async (blockId: string, depth: number): Promise<void> => {
+      for await (const block of iteratePaginatedAPI(this.notion.blocks.children.list, { block_id: blockId, page_size: 100 })) {
+        if (!isFullBlock(block) || block.in_trash) continue;
+        if (block.type === "child_database") databases.push(block.id);
+        else if (block.type === "child_page") pages.push(block.id);
+        else if (block.type === "image") rootImages.push(block);
+        else if ((block.type === "column_list" || block.type === "column") && block.has_children && depth < 3) {
+          await scan(block.id, depth + 1);
+        }
+      }
+    };
+    await scan(root.id, 0);
+
+    const groups: PlannedGroup[] = [];
+    for (const dbId of databases) {
+      let db;
+      try {
+        db = await this.notion.databases.retrieve({ database_id: dbId });
+      } catch (e) {
+        // Linked views of databases that live elsewhere end up here; they are skipped.
+        log(`  skipped database ${dbId}: ${describeNotionError(e)}`);
+        continue;
+      }
+      const dbTitle = "title" in db ? plain(db.title) : "";
+      const sources = "data_sources" in db ? db.data_sources : [];
+      for (const ds of sources) {
+        const label = sources.length > 1 ? [dbTitle, ds.name].filter(Boolean).join(" / ") : ds.name || dbTitle || "Database";
+        groups.push({ id: `ds:${ds.id}`, label, list: () => this.listDataSource(ds.id) });
+      }
     }
+
+    groups.push({
+      id: "pages",
+      label: "Pages",
+      hideIfEmpty: true,
+      list: async () => {
+        const out: PlannedItem[] = [];
+        if (coverUrl(root)) out.push(this.coverItem(root, "Cover"));
+        out.push(...this.imageItems(rootImages, root.id, rootTitle, log));
+        for (const pageId of pages) out.push(...(await this.listPageImages(pageId, log)));
+        return out;
+      },
+    });
+    return groups;
   }
 
   private async retrievePage(pageId: string): Promise<Page> {
@@ -159,7 +209,7 @@ export class NotionSource implements ImageSource {
     };
   }
 
-  private async listDataSource(dataSourceId: string, titleProperty?: string): Promise<PlannedItem[]> {
+  private async listDataSource(dataSourceId: string): Promise<PlannedItem[]> {
     const rows: Page[] = [];
     for await (const row of iteratePaginatedAPI(this.notion.dataSources.query, {
       data_source_id: dataSourceId,
@@ -178,44 +228,51 @@ export class NotionSource implements ImageSource {
       while (next < rows.length) {
         const i = next++;
         const row = rows[i]!;
-        out[i] = await this.pageImageItem(row, pageTitle(row, titleProperty) || "Untitled");
+        out[i] = await this.pageImageItem(row, pageTitle(row) || "Untitled");
       }
     };
     await Promise.all(Array.from({ length: Math.min(3, rows.length) }, worker));
-    out.sort((a, b) => a.label.localeCompare(b.label, "ru"));
+    out.sort((a, b) => a.label.localeCompare(b.label, undefined, { numeric: true }));
     return out;
   }
 
-  private async listPageCover(pageId: string, label?: string): Promise<PlannedItem[]> {
-    const page = await this.retrievePage(pageId);
-    return [this.coverItem(page, label || pageTitle(page) || "Cover")];
-  }
-
-  private async listPageImages(pageId: string, log: (msg: string) => void): Promise<PlannedItem[]> {
-    const page = await this.retrievePage(pageId);
-    const title = pageTitle(page) || "Image";
+  private imageItems(blocks: Block[], pageId: string, title: string, log: (msg: string) => void): PlannedItem[] {
     const out: PlannedItem[] = [];
-    let n = 0;
-    for await (const block of iteratePaginatedAPI(this.notion.blocks.children.list, {
-      block_id: pageId,
-      page_size: 100,
-    })) {
-      if (!isFullBlock(block) || block.type !== "image" || block.in_trash) continue;
-      n += 1;
+    blocks.forEach((block, i) => {
+      if (block.type !== "image") return;
       const url = blockImageUrl(block);
       if (!url) {
         log(`  skipped block ${block.id}: unknown image type`);
-        continue;
+        return;
       }
       out.push({
         id: block.id,
-        label: plain(block.image.caption) || `${title} ${n}`,
-        sourcePageId: page.id,
+        label: plain(block.image.caption) || `${title} ${i + 1}`,
+        sourcePageId: pageId,
         kind: "block",
         lastEditedTime: block.last_edited_time,
         fetchImage: () => downloadImage(url),
       });
-    }
+    });
     return out;
   }
+
+  /** Images placed directly on a page (top level only). */
+  private async listPageImages(pageId: string, log: (msg: string) => void): Promise<PlannedItem[]> {
+    const page = await this.retrievePage(pageId);
+    const images: Block[] = [];
+    for await (const block of iteratePaginatedAPI(this.notion.blocks.children.list, { block_id: pageId, page_size: 100 })) {
+      if (isFullBlock(block) && block.type === "image" && !block.in_trash) images.push(block);
+    }
+    return this.imageItems(images, page.id, pageTitle(page) || "Image", log);
+  }
+}
+
+/** Accept a Notion page link (notion.so, app.notion.com, notion.site) or a bare id. */
+export function parseNotionPageId(input: string): string | null {
+  const text = input.trim().split(/[?#]/)[0] ?? "";
+  const uuid = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(text);
+  if (uuid) return uuid[0].replace(/-/g, "").toLowerCase();
+  const all = [...text.matchAll(/(?<![0-9a-f])[0-9a-f]{32}(?![0-9a-f])/gi)];
+  return all.length ? all[all.length - 1]![0].toLowerCase() : null;
 }

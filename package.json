@@ -3,12 +3,14 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "DM screen controller: show Notion images on the players' monitor",
+  "description": "DM screen: show your images (a folder or Notion) on the players' monitor",
   "scripts": {
-    "start": "NODE_ENV=production bun src/server.ts",
-    "dev": "bun --hot src/server.ts",
-    "sync": "bun src/sync/cli.ts",
-    "typecheck": "tsc --noEmit"
+    "start": "NODE_ENV=production bun src/main.ts",
+    "dev": "DATA_DIR=./.data NO_BROWSER=1 bun --hot src/main.ts",
+    "typecheck": "tsc --noEmit",
+    "build:mac": "NODE_ENV=production bun build --compile --minify --target=bun-darwin-arm64 src/main.ts --outfile dist/dnd-master-screen-mac && codesign --force --sign - dist/dnd-master-screen-mac",
+    "build:win": "NODE_ENV=production bun build --compile --minify --target=bun-windows-x64 src/main.ts --outfile dist/dnd-master-screen.exe",
+    "build": "bun run build:mac && bun run build:win"
   },
   "engines": {
     "bun": ">=1.2.0"

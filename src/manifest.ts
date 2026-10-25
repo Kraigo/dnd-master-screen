@@ -1,9 +1,13 @@
-import { rename } from "node:fs/promises";
-import { MANIFEST_PATH } from "./config.ts";
+import { join } from "node:path";
 import type { Manifest } from "./shared/types.ts";
+import { writeJsonAtomic } from "./store.ts";
 
-export async function readManifest(): Promise<Manifest | null> {
-  const file = Bun.file(MANIFEST_PATH);
+export function manifestPath(dir: string): string {
+  return join(dir, "manifest.json");
+}
+
+export async function readManifest(dir: string): Promise<Manifest | null> {
+  const file = Bun.file(manifestPath(dir));
   if (!(await file.exists())) return null;
   try {
     const data = (await file.json()) as Manifest;
@@ -14,9 +18,6 @@ export async function readManifest(): Promise<Manifest | null> {
   }
 }
 
-/** Write via a temp file + rename so a crash never leaves a half-written manifest. */
-export async function writeManifest(m: Manifest): Promise<void> {
-  const tmp = `${MANIFEST_PATH}.tmp`;
-  await Bun.write(tmp, JSON.stringify(m, null, 2));
-  await rename(tmp, MANIFEST_PATH);
+export async function writeManifest(dir: string, m: Manifest): Promise<void> {
+  await writeJsonAtomic(manifestPath(dir), m);
 }
