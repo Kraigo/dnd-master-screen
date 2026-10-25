@@ -26,13 +26,14 @@ async function main(): Promise<void> {
     }
     try {
       const server = await startServer(port);
-      console.log("DnD Master Screen");
       const base = `http://localhost:${server.port}`;
+      console.log("DnD Master Screen\n");
+      console.log("On this computer (no password needed, opens automatically):");
       console.log(`  Master panel:    ${base}/master`);
       console.log(`  Players' screen: ${base}/`);
       logLan();
-      console.log(`  Data folder:     ${DATA_DIR}`);
-      console.log("\nKeep this window open during the game. To stop: close it, or Quit in the master panel.");
+      console.log(`\nData folder: ${DATA_DIR}`);
+      console.log("Keep this window open during the game. To stop: close it, or Quit in the master panel.");
       if (OPEN_BROWSER) openBrowser(`${base}/master`);
       return;
     } catch (e) {

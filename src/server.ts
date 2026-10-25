@@ -351,7 +351,13 @@ function listenHost(): string {
 }
 
 export function logLan(): void {
-  for (const a of lanAddresses()) console.log(`  Other devices:   ${a}/  (master: ${a}/master)`);
+  const addresses = lanAddresses();
+  if (!addresses.length) return;
+  console.log("\nOn other devices in this network:");
+  for (const a of addresses) {
+    console.log(`  Players' screen: ${a}/`);
+    console.log(`  Master panel:    ${a}/master  (asks for the master password)`);
+  }
 }
 
 /** Restart the listener after LAN mode changed (Bun cannot change the address of a running server). */
@@ -366,7 +372,7 @@ async function rebind(): Promise<void> {
     settings = await updateSettings({ lanEnabled: false });
     server = createServer(listenHost(), port);
   }
-  console.log(settings.lanEnabled ? "Other devices can now open the app:" : "Only this computer can open the app now.");
+  if (!settings.lanEnabled) console.log("\nOnly this computer can open the app now.");
   logLan();
 }
 
