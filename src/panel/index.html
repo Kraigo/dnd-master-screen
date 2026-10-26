@@ -97,7 +97,7 @@
           folders of the notes that embed them and named after those notes.
         </p>
         <div class="row">
-          <button type="button" class="act" id="add-folder">Choose folder…</button>
+          <button type="button" class="act" id="add-folder" data-picks-folder>Choose folder…</button>
           <button type="button" class="quiet" id="add-folder-type">Type a path instead</button>
         </div>
         <form class="row" id="folder-path-form" hidden>
@@ -189,6 +189,8 @@
         <p class="hint">You can close this tab. This page comes back by itself when the app starts again.</p>
       </div>
     </main>
+
+    <div class="toast" id="toast" role="status" hidden></div>
 
     <script type="module" src="./panel.ts"></script>
   </body>

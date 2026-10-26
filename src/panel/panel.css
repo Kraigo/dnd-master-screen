@@ -865,6 +865,20 @@ select {
   margin: 0;
 }
 
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: 28px;
+  z-index: 10;
+  transform: translateX(-50%);
+  padding: 12px 20px;
+  border: 1px solid var(--slate-line);
+  border-radius: 8px;
+  background: var(--slate);
+  color: var(--paper);
+  box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
+}
+
 .item:focus-visible {
   outline: 2px solid var(--paper-dim);
   outline-offset: 6px;

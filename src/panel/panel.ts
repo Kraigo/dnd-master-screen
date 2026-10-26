@@ -76,6 +76,7 @@ const els = {
   loginPassword: $<HTMLInputElement>("login-password"),
   loginError: $("login-error"),
   stopped: $("stopped"),
+  toast: $("toast"),
 };
 
 // ---------------------------------------------------------------------------
@@ -233,6 +234,8 @@ function itemButton(item: ManifestItem, index: number): HTMLButtonElement {
 interface EmptyAction {
   label: string;
   run: () => void;
+  /** Opens the folder dialog: disabled while a dialog is already open. */
+  picksFolder?: boolean;
 }
 
 /** Message shown instead of the grid when the active project has nothing to show. */
@@ -244,7 +247,7 @@ function emptyState(): { title: string; text: string; actions: EmptyAction[] } |
       title: "Add your first project",
       text: "A project holds the images for one game. Pick a folder with images (subfolders become tabs), or connect a Notion campaign page.",
       actions: [
-        { label: "Choose folder…", run: () => void addFolderProject() },
+        { label: "Choose folder…", run: () => void addFolderProject(), picksFolder: true },
         { label: "Connect Notion…", run: openProjects },
       ],
     };
@@ -332,6 +335,10 @@ function showEmpty(title: string, text: string, actions: EmptyAction[] = []): vo
     b.type = "button";
     b.className = "act";
     b.textContent = a.label;
+    if (a.picksFolder) {
+      b.dataset.picksFolder = "";
+      b.disabled = pickingFolder;
+    }
     b.addEventListener("click", a.run);
     row.append(b);
   }
@@ -762,19 +769,45 @@ async function createProject(data: Record<string, string>): Promise<boolean> {
   return res.ok;
 }
 
+let pickingFolder = false;
+
+function showToast(text: string): void {
+  els.toast.textContent = text;
+  els.toast.hidden = !text;
+}
+
+function setPickingFolder(on: boolean): void {
+  pickingFolder = on;
+  for (const b of document.querySelectorAll<HTMLButtonElement>("[data-picks-folder]")) b.disabled = on;
+}
+
 async function addFolderProject(): Promise<void> {
+  if (pickingFolder) return;
   showDialogError("");
-  const res = await api("POST", "/api/pick-folder");
-  if (!res.ok) {
-    // No native dialog on this system: fall back to typing the path.
-    openProjects();
-    els.folderPathForm.hidden = false;
-    els.folderPath.focus();
-    showDialogError(res.error);
-    return;
+  // Settings sits in the top layer and would hide the progress message.
+  if (els.dialog.open) els.dialog.close();
+  setPickingFolder(true);
+  // The system dialog can take a few seconds to appear: say right away that it is coming.
+  showToast("Opening the folder dialog…");
+  try {
+    const res = await api("POST", "/api/pick-folder");
+    if (!res.ok) {
+      // No native dialog on this system: fall back to typing the path.
+      openProjects();
+      els.folderPathForm.hidden = false;
+      els.folderPath.focus();
+      showDialogError(res.error);
+      return;
+    }
+    const path = res.data?.path as string | null;
+    if (!path) return;
+    showToast("Adding the folder…");
+    if (await createProject({ type: "folder", path })) els.dialog.close();
+    else openProjects(); // show the error
+  } finally {
+    setPickingFolder(false);
+    showToast("");
   }
-  const path = res.data?.path as string | null;
-  if (path && (await createProject({ type: "folder", path }))) els.dialog.close();
 }
 
 function openProjects(): void {
