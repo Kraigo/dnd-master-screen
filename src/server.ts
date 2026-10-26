@@ -14,17 +14,19 @@ import type { Server, ServerWebSocket } from "bun";
 import { readManifest } from "./manifest.ts";
 import { pickFolder } from "./os/pick-folder.ts";
 import { folderName, scanFolder, watchFolder } from "./projects/folder.ts";
-import type {
-  AppState,
-  Manifest,
-  PanelCommand,
-  PanelMessage,
-  Project,
-  ScreenHello,
-  ScreenMessage,
-  ScreenState,
-  ScreenView,
-  SyncStatus,
+import { isObsidianFolder, scanObsidian } from "./projects/obsidian.ts";
+import {
+  isLocalProject,
+  type AppState,
+  type Manifest,
+  type PanelCommand,
+  type PanelMessage,
+  type Project,
+  type ScreenHello,
+  type ScreenMessage,
+  type ScreenState,
+  type ScreenView,
+  type SyncStatus,
 } from "./shared/types.ts";
 import { clamp, MAX_ZOOM, MIN_ZOOM } from "./shared/view.ts";
 import {
@@ -84,9 +86,9 @@ async function loadLibrary(): Promise<boolean> {
   folderError = null;
   if (!active) {
     manifest = null;
-  } else if (active.type === "folder") {
+  } else if (isLocalProject(active)) {
     try {
-      const scan = await scanFolder(active.path);
+      const scan = active.type === "obsidian" ? await scanObsidian(active.path) : await scanFolder(active.path);
       manifest = scan.manifest;
       folderFiles = scan.files;
     } catch (e) {
@@ -112,7 +114,7 @@ async function activate(project: Project | null): Promise<void> {
     settings = await updateSettings({ activeProjectId: project?.id ?? null });
   }
   await loadLibrary();
-  if (project?.type === "folder") {
+  if (isLocalProject(project)) {
     const id = project.id;
     stopWatching = watchFolder(project.path, () => {
       if (active?.id !== id) return;
@@ -330,7 +332,9 @@ async function createProject(input: Record<string, unknown>): Promise<Project | 
     if (!path) return "Choose a folder";
     const s = await stat(path).catch(() => null);
     if (!s?.isDirectory()) return `Folder not found: ${path}`;
-    return { id: newProjectId(), name: name || folderName(path), type: "folder", path };
+    // A folder in an Obsidian vault: group images by the notes that embed them.
+    const type = (await isObsidianFolder(path)) ? "obsidian" : "folder";
+    return { id: newProjectId(), name: name || folderName(path), type, path };
   }
   if (input.type === "notion") {
     const rootPageId = parseNotionPageId(typeof input.link === "string" ? input.link : "");
@@ -547,7 +551,7 @@ function createServer(hostname: string, port: number): Server<WsData> {
         POST: guarded(async (req) => {
           const p = findProject(req.params.id);
           if (!p) return json({ error: "Project not found" }, 404);
-          if (p.type === "folder") {
+          if (isLocalProject(p)) {
             if (active?.id === p.id && (await loadLibrary())) {
               publishPanel({ type: "manifest" });
               publishState();
@@ -593,7 +597,7 @@ function createServer(hostname: string, port: number): Server<WsData> {
       "/images/:file": async (req) => {
         const name = req.params.file;
         if (!active || !CACHE_FILE_RE.test(name)) return new Response("Not found", { status: 404 });
-        const path = active.type === "folder" ? folderFiles.get(name) : join(projectDir(active.id), "images", name);
+        const path = isLocalProject(active) ? folderFiles.get(name) : join(projectDir(active.id), "images", name);
         if (!path) return new Response("Not found", { status: 404 });
         const file = Bun.file(path);
         if (!(await file.exists())) return new Response("Not found", { status: 404 });

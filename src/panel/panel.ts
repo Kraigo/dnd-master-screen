@@ -2,7 +2,17 @@
 // switch projects, sync Notion.
 
 import { connectSocket } from "../shared/socket.ts";
-import type { AppState, Manifest, ManifestGroup, ManifestItem, PanelMessage, Project, ScreenState, SyncStatus } from "../shared/types.ts";
+import {
+  isLocalProject,
+  type AppState,
+  type Manifest,
+  type ManifestGroup,
+  type ManifestItem,
+  type PanelMessage,
+  type Project,
+  type ScreenState,
+  type SyncStatus,
+} from "../shared/types.ts";
 import { clamp, computeView, MAX_ZOOM, MIN_ZOOM, pointToFocus, transformCss, type ViewTransform } from "../shared/view.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
@@ -204,7 +214,14 @@ function itemButton(item: ManifestItem, index: number): HTMLButtonElement {
     b.addEventListener("click", () => show(item.id));
   } else {
     b.disabled = true;
-    thumb.textContent = item.failed ? "download failed" : "no image";
+    thumb.textContent =
+      item.missing === "offloaded"
+        ? "not downloaded from iCloud"
+        : item.missing === "not-found"
+          ? "image not found"
+          : item.failed
+            ? "download failed"
+            : "no image";
   }
   const name = document.createElement("span");
   name.className = "name";
@@ -232,9 +249,16 @@ function emptyState(): { title: string; text: string; actions: EmptyAction[] } |
       ],
     };
   }
-  if (project.type === "folder") {
+  if (isLocalProject(project)) {
     if (app.folderError) {
       return { title: "Folder not available", text: app.folderError, actions: [{ label: "Try again", run: startSync }] };
+    }
+    if (!manifest?.groups.length && project.type === "obsidian") {
+      return {
+        title: "No images in this vault yet",
+        text: "Embed images in notes (![[image.png]] or an image property) or put them anywhere in the vault. The list updates by itself.",
+        actions: [],
+      };
     }
     if (!manifest?.groups.length) {
       return {
@@ -523,9 +547,9 @@ function renderSync(): void {
   els.sync.hidden = !project;
   if (!project) return;
   els.syncStatus.className = "sync-status";
-  els.syncPath.hidden = project.type !== "folder";
+  els.syncPath.hidden = !isLocalProject(project);
 
-  if (project.type === "folder") {
+  if (isLocalProject(project)) {
     els.btnSync.disabled = false;
     els.btnSync.textContent = "Rescan";
     els.syncBar.hidden = true;
@@ -621,7 +645,9 @@ function showDialogError(msg: string): void {
 }
 
 function projectWhere(p: Project): string {
-  return p.type === "folder" ? `Folder · ${p.path}` : "Notion page";
+  if (p.type === "folder") return `Folder · ${p.path}`;
+  if (p.type === "obsidian") return `Obsidian · ${p.path}`;
+  return "Notion page";
 }
 
 function renderProjects(): void {
@@ -722,7 +748,7 @@ async function renameProject(p: Project): Promise<void> {
 
 async function removeProject(p: Project): Promise<void> {
   const note =
-    p.type === "folder"
+    isLocalProject(p)
       ? "The folder and its images stay where they are."
       : "Downloaded images are removed from the app; nothing changes in Notion.";
   if (!confirm(`Remove the project "${p.name}"?\n${note}`)) return;

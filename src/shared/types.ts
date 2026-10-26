@@ -8,10 +8,12 @@ export interface ManifestItem {
   file: string | null;
   /** Notion page the image came from; the relative subfolder for folder projects. */
   sourcePageId: string;
-  kind: "cover" | "block" | "file";
+  kind: "cover" | "block" | "file" | "note";
   lastEditedTime: string;
   /** The image exists in Notion but could not be downloaded on the last sync. */
   failed?: boolean;
+  /** Obsidian: a note embeds an image that is not on disk (offloaded = iCloud has not downloaded it). */
+  missing?: "offloaded" | "not-found";
 }
 
 export interface ManifestGroup {
@@ -25,14 +27,23 @@ export interface ManifestGroup {
 export interface Manifest {
   version: 1;
   syncedAt: string;
-  mode: "notion" | "folder";
+  mode: "notion" | "folder" | "obsidian";
   groups: ManifestGroup[];
 }
 
 /** A game: either a linked folder of images or a Notion campaign page. */
 export type Project =
   | { id: string; name: string; type: "folder"; path: string }
+  /** An Obsidian vault (or a folder in one): images grouped by the notes that embed them. */
+  | { id: string; name: string; type: "obsidian"; path: string }
   | { id: string; name: string; type: "notion"; rootPageId: string };
+
+/** Projects whose images are read straight from a folder on disk. */
+export type LocalProject = Extract<Project, { path: string }>;
+
+export function isLocalProject(p: Project | null | undefined): p is LocalProject {
+  return p?.type === "folder" || p?.type === "obsidian";
+}
 
 /** What the DM panel gets from GET /api/state. The Notion token itself is never sent. */
 export interface AppState {

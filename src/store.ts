@@ -80,7 +80,8 @@ function isProject(p: unknown): p is Project {
   if (!p || typeof p !== "object") return false;
   const o = p as Record<string, unknown>;
   if (typeof o.id !== "string" || typeof o.name !== "string") return false;
-  return (o.type === "folder" && typeof o.path === "string") || (o.type === "notion" && typeof o.rootPageId === "string");
+  if (o.type === "folder" || o.type === "obsidian") return typeof o.path === "string";
+  return o.type === "notion" && typeof o.rootPageId === "string";
 }
 
 export async function readProjects(): Promise<Project[]> {

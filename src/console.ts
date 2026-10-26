@@ -20,7 +20,7 @@ import {
 const HELP = `
 Commands (press a key):
   O  open the master panel           N  other devices on / off
-  P  set the master password         F  add a folder project
+  P  set the master password         F  add a folder or Obsidian vault
   L  list and switch projects        C  clear all app data
   H  show this help                  Q  quit`;
 
@@ -168,14 +168,14 @@ async function addFolder(keys: Keys): Promise<void> {
     if (!path) return say("No folder chosen.");
   }
   const result = await addProject({ type: "folder", path });
-  say(typeof result === "string" ? result : `Added and opened "${result.name}".`);
+  say(typeof result === "string" ? result : `Added and opened "${result.name}"${result.type === "obsidian" ? " (Obsidian vault)" : ""}.`);
 }
 
 async function listProjects(keys: Keys): Promise<void> {
   const { projects, activeId } = projectList();
   if (!projects.length) return say("No projects yet. Press F to add a folder.");
   projects.forEach((p, i) => {
-    const where = p.type === "folder" ? p.path : "Notion";
+    const where = p.type === "notion" ? "Notion" : p.type === "obsidian" ? `Obsidian: ${p.path}` : p.path;
     say(`  ${p.id === activeId ? "*" : " "} ${i + 1}. ${p.name}  (${where})`);
   });
   const answer = await keys.line("Number to open (Enter to keep the current one): ");

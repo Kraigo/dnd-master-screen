@@ -5,6 +5,7 @@ A DM screen for tabletop games. The laptop stays with the DM, a second monitor f
 Images come from **projects**, one per game:
 
 - **Folder**: any folder on your computer. Subfolders become tabs, file names become captions. Images are not copied; add a file to the folder and it shows up in the panel.
+- **Obsidian**: a vault (or a folder in one). Images are grouped by the notes that embed them and named after those notes.
 - **Notion**: a campaign page in Notion. Images are downloaded in advance, so no internet is needed at the table.
 
 The players only ever see the image: no titles, captions or file names, not even in the window title.
@@ -27,7 +28,7 @@ The console window also takes single-key commands (they work with a Cyrillic key
 | O | open the master panel in the browser |
 | N | other devices on / off (asks for a master password the first time) |
 | P | set or change the master password |
-| F | add a folder project: drag the folder into the window and press Enter, or press Enter to pick it in a dialog |
+| F | add a folder or Obsidian vault: drag the folder into the window and press Enter, or press Enter to pick it in a dialog |
 | L | list projects and switch to one by number |
 | C | clear all app data: projects, Notion token, master password, downloaded Notion images (asks to type `clear`; your image folders are not touched) |
 | H | show the commands |
@@ -62,6 +63,28 @@ My campaign/
 ```
 
 Supported: jpg, png, webp, gif, avif, svg. Files and folders starting with a dot are ignored. Sorting is natural ("Hero 2" before "Hero 10"). The list updates by itself when files change; "Rescan" forces it. Removing a folder project never touches the folder.
+
+### Obsidian project
+
+Add the vault folder (or a campaign folder inside it) the same way as a folder; the app recognises an Obsidian vault by its `.obsidian` folder. Images can live anywhere, e.g. all in one `_attachments` folder: what matters is which note embeds them.
+
+```
+My campaign/
+  3 Characters/Innkeeper.md    ![[innkeeper-1.png]]          -> tab "Characters", caption "Innkeeper"
+  4 Locations/City.md          ![[city-1.png]]               -> tab "Locations", caption "City"
+                               ![[city-2.png|North side]]    -> caption "North side"
+  _attachments/                (all the images)
+```
+
+- **Tab** = folder of the note, without a leading number ("3 Characters" → "Characters"), in folder order. Notes lying directly in the chosen folder go to a "Notes" tab after the categories.
+- **Caption** = the note's name; a second image of the same note gets "City 2". An embed caption (`![[map.png|North side]]`) wins; a size (`|420`) is not a caption.
+- **Which images**: frontmatter properties that link to an image (`portrait: "[[innkeeper-1.png]]"`), `![[…]]` and `![](…)` embeds in the text. Embeds inside code blocks are ignored. File names are resolved like Obsidian does.
+- **Unlinked**: images that no note embeds get their own tab, so nothing is lost.
+- The templates folder from the vault settings is skipped.
+- A note that embeds an image that is not on disk shows a grey card: "image not found", or "not downloaded from iCloud" when iCloud has offloaded the file (open it in Obsidian or Finder to download it).
+- Editing notes or adding images updates the panel by itself.
+
+The app only reads note text to find embeds; nothing from notes is stored or sent anywhere.
 
 ### Notion project
 
@@ -146,6 +169,7 @@ Code:
 - `src/server.ts`: HTTP API, WebSocket, screen state, active project, other-devices mode and master password
 - `src/store.ts`: app data folder, `settings.json`, `projects.json`
 - `src/projects/folder.ts`: folder scanning and watching
+- `src/projects/obsidian.ts`: Obsidian vault scanning (images grouped by the notes that embed them)
 - `src/sync/`: Notion discovery (`notion.ts`) and incremental download (`index.ts`)
 - `src/os/`: native folder dialog, opening the browser
 - `src/panel/`, `src/screen/`: the two pages, bundled by Bun
