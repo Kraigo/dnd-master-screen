@@ -2,8 +2,8 @@
 // no labels, no error messages. State comes from the server over WebSocket.
 
 import { connectSocket } from "../shared/socket.ts";
-import { drawFog, loadMask } from "../shared/fog.ts";
-import type { FogMask, ScreenView } from "../shared/types.ts";
+import { drawFog, drawInk, loadMask } from "../shared/fog.ts";
+import type { FogMask, Ink, ScreenView } from "../shared/types.ts";
 import { computeView, transformCss } from "../shared/view.ts";
 
 interface Layer {
@@ -16,21 +16,30 @@ interface Layer {
   maskImg: HTMLImageElement | null;
   /** Latest fog request for this layer; older ones that finish decoding later are dropped. */
   fogToken: number;
+  /** Drawing above the fog (arrows, circles), with the same bookkeeping as the fog. */
+  ink: HTMLCanvasElement;
+  inkSrc: Ink;
+  inkImg: HTMLImageElement | null;
+  inkToken: number;
 }
 
 const layers: Layer[] = Array.from(document.querySelectorAll<HTMLElement>("#stage .layer"), (el) => ({
   el,
   img: el.querySelector("img")!,
-  fog: el.querySelector("canvas")!,
+  fog: el.querySelector("canvas.fog")!,
   fogMask: null,
   maskImg: null,
   fogToken: 0,
+  ink: el.querySelector("canvas.ink")!,
+  inkSrc: null,
+  inkImg: null,
+  inkToken: 0,
 }));
 const veil = document.getElementById("veil")!;
 
 let front = layers[0]!;
 let back = layers[1]!;
-let current: ScreenView = { mode: "black", src: null, zoom: 1, focusX: 0.5, focusY: 0.5, fog: null };
+let current: ScreenView = { mode: "black", src: null, zoom: 1, focusX: 0.5, focusY: 0.5, fog: null, ink: null };
 let shownSrc: string | null = null;
 let pendingSrc: string | null = null;
 let loadToken = 0;
@@ -73,7 +82,22 @@ async function setFog(layer: Layer, mask: FogMask): Promise<boolean> {
   return true;
 }
 
-async function swapTo(src: string, mask: FogMask): Promise<void> {
+function paintInk(layer: Layer): void {
+  drawInk(layer.ink, innerWidth, innerHeight, layer.img.naturalWidth, layer.img.naturalHeight, layer.inkImg);
+}
+
+/** Put a drawing on a layer (null clears it). */
+async function setInk(layer: Layer, ink: Ink): Promise<boolean> {
+  const token = ++layer.inkToken;
+  const img = ink ? await loadMask(ink) : null;
+  if (token !== layer.inkToken) return false;
+  layer.inkSrc = ink;
+  layer.inkImg = img;
+  paintInk(layer);
+  return true;
+}
+
+async function swapTo(src: string, mask: FogMask, ink: Ink): Promise<void> {
   const token = ++loadToken;
   pendingSrc = src;
   const next = back;
@@ -101,6 +125,7 @@ async function swapTo(src: string, mask: FogMask): Promise<void> {
   } else {
     next.fog.style.opacity = "0";
   }
+  await setInk(next, ink);
   if (token !== loadToken) return;
   pendingSrc = null;
   applyTransform(next, current, false);
@@ -129,10 +154,11 @@ function updateVeil(): void {
 function render(view: ScreenView): void {
   current = view;
   if (view.src && view.src !== shownSrc) {
-    if (view.src !== pendingSrc) void swapTo(view.src, view.fog);
+    if (view.src !== pendingSrc) void swapTo(view.src, view.fog, view.ink);
   } else {
     applyTransform(front, view, true);
     if (view.fog !== front.fogMask) void setFog(front, view.fog);
+    if (view.ink !== front.inkSrc) void setInk(front, view.ink);
   }
   updateVeil();
 }
@@ -155,6 +181,7 @@ let resizeTimer = 0;
 addEventListener("resize", () => {
   applyTransform(front, current, false);
   paintFog(front);
+  paintInk(front);
   clearTimeout(resizeTimer);
   resizeTimer = window.setTimeout(reportViewport, 250);
 });

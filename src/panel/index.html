@@ -24,6 +24,7 @@
           <div class="preview" id="preview" data-mode="black" title="Click to choose the zoom center">
             <img id="preview-img" alt="" draggable="false" />
             <canvas class="preview-fog" id="preview-fog" hidden></canvas>
+            <canvas class="preview-ink" id="preview-ink"></canvas>
             <div class="preview-veil" id="preview-veil"><span>Blacked out</span></div>
             <div class="preview-focus" id="preview-focus" hidden></div>
           </div>
@@ -41,7 +42,7 @@
             <button type="button" class="act" id="btn-restore">Show again</button>
           </div>
           <div class="actions fog-actions" id="fog-actions" hidden>
-            <button type="button" class="act" id="btn-fog-edit">Edit fog</button>
+            <button type="button" class="act" id="btn-fog-edit">Draw &amp; fog</button>
             <button type="button" class="act" id="btn-fog-toggle">Cover with fog</button>
           </div>
 
@@ -56,7 +57,7 @@
             <div><dt>← →</dt><dd>prev / next image</dd></div>
             <div><dt>1–9</dt><dd>image by number</dd></div>
             <div><dt>+ − 0</dt><dd>zoom</dd></div>
-            <div><dt>E</dt><dd>edit fog</dd></div>
+            <div><dt>E</dt><dd>draw &amp; fog</dd></div>
             <div><dt>⇧1–9</dt><dd>recent image</dd></div>
           </dl>
         </section>
@@ -204,25 +205,43 @@
 
     <dialog class="fog-editor" id="fog-editor" aria-labelledby="fog-title">
       <header class="fog-bar">
-        <h2 id="fog-title">Fog of war</h2>
-        <div class="seg" role="group" aria-label="Brush">
-          <button type="button" data-fog-mode="reveal" aria-pressed="true">Reveal</button>
-          <button type="button" data-fog-mode="hide" aria-pressed="false">Hide</button>
+        <h2 id="fog-title">Draw &amp; fog</h2>
+        <div class="seg" role="group" aria-label="Fog brush">
+          <button type="button" data-tool="reveal" aria-pressed="true" title="Reveal (R)">Reveal</button>
+          <button type="button" data-tool="hide" aria-pressed="false" title="Hide (H)">Hide</button>
         </div>
-        <label class="fog-size">Brush <input id="fog-size" type="range" min="1" max="30" value="7" /></label>
+        <div class="seg" role="group" aria-label="Drawing">
+          <button type="button" data-tool="draw" aria-pressed="false" title="Draw (D)">Draw</button>
+          <button type="button" data-tool="erase" aria-pressed="false" title="Erase the drawing (E)">Erase</button>
+        </div>
+        <div class="swatches" id="ink-colors" role="group" aria-label="Colour">
+          <button type="button" data-color="#e5484d" style="--c: #e5484d" aria-label="Red" aria-pressed="true"></button>
+          <button type="button" data-color="#f5b83d" style="--c: #f5b83d" aria-label="Amber" aria-pressed="false"></button>
+          <button type="button" data-color="#f4f1ea" style="--c: #f4f1ea" aria-label="White" aria-pressed="false"></button>
+          <button type="button" data-color="#3db9e5" style="--c: #3db9e5" aria-label="Blue" aria-pressed="false"></button>
+          <button type="button" data-color="#46a758" style="--c: #46a758" aria-label="Green" aria-pressed="false"></button>
+          <button type="button" data-color="#141414" style="--c: #141414" aria-label="Black" aria-pressed="false"></button>
+        </div>
+        <label class="fog-size">Size <input id="fog-size" type="range" min="1" max="30" value="7" /></label>
+        <span class="bar-break"></span>
         <button type="button" class="quiet" id="fog-reveal-all">Reveal all</button>
         <button type="button" class="quiet" id="fog-cover-all">Cover all</button>
-        <button type="button" class="quiet" id="fog-cancel">Cancel</button>
-        <button type="button" class="act" id="fog-done">Done</button>
+        <button type="button" class="quiet" id="ink-clear">Clear drawing</button>
+        <span class="bar-end">
+          <button type="button" class="quiet" id="fog-cancel">Cancel</button>
+          <button type="button" class="act" id="fog-done">Done</button>
+        </span>
       </header>
       <div class="fog-stage" id="fog-stage">
         <img id="fog-img" alt="" draggable="false" />
         <canvas id="fog-canvas"></canvas>
+        <canvas id="ink-canvas"></canvas>
         <div class="fog-cursor" id="fog-cursor" hidden></div>
       </div>
       <p class="fog-hint">
-        The players see the new fog when you press Done; Cancel or Esc throws the changes away. Hold Alt (Option)
-        to paint with the other brush, X switches it, [ and ] change its size.
+        The players see the changes when you press Done; Cancel or Esc throws them away. The drawing lies above the
+        fog and stays on the image until you clear it. Keys: R reveal, H hide, D draw, E erase, Alt (Option) for the
+        opposite brush, [ and ] size.
       </p>
     </dialog>
 

@@ -25,6 +25,7 @@ import {
   type ScreenHello,
   type ScreenMessage,
   type FogMask,
+  type Ink,
   type ScreenState,
   type ScreenView,
   type SyncStatus,
@@ -35,13 +36,13 @@ import {
   ensureDataDir,
   newProjectId,
   projectDir,
-  readFog,
+  readImageMap,
   readRecent,
   readProjects,
   readSettings,
   removeProjectCache,
   updateSettings,
-  writeFog,
+  writeImageMap,
   writeRecent,
   type RecentEntry,
   writeProjects,
@@ -84,6 +85,8 @@ const BLACK: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, 
 let state: ScreenState = BLACK;
 /** Fog of war of the active project's images (item id -> mask), persisted in fog.json. */
 let fog = new Map<string, string>();
+/** Drawings on the active project's images (item id -> transparent PNG), persisted in ink.json. */
+let ink = new Map<string, string>();
 /** Recently shown images with their view, newest first (the recents palette), persisted in recent.json. */
 let recent: RecentEntry[] = [];
 const RECENT_MAX = 9;
@@ -124,7 +127,8 @@ async function activate(project: Project | null): Promise<void> {
   active = project;
   await flushProjectState();
   state = BLACK;
-  fog = project ? await readFog(project.id) : new Map();
+  fog = project ? await readImageMap(project.id, "fog.json") : new Map();
+  ink = project ? await readImageMap(project.id, "ink.json") : new Map();
   recent = project ? await readRecent(project.id) : [];
   if (settings.activeProjectId !== (project?.id ?? null)) {
     settings = await updateSettings({ activeProjectId: project?.id ?? null });
@@ -164,6 +168,7 @@ function appState(req: Request): AppState {
     folderError,
     sync: syncStatus,
     fogged: [...fog.keys()],
+    inked: [...ink.keys()],
     recent: recent.map((r) => r.itemId),
     notion: { tokenSet: !!settings.notionToken, workspace: settings.notionWorkspace },
     lan: { enabled: settings.lanEnabled, addresses: lanAddresses() },
@@ -180,6 +185,11 @@ function currentFog(): FogMask {
   return fog.get(state.itemId) ?? "";
 }
 
+/** Drawing on what is on screen now. */
+function currentInk(): Ink {
+  return state.itemId ? (ink.get(state.itemId) ?? null) : null;
+}
+
 function screenView(): ScreenView {
   const file = state.itemId ? fileById.get(state.itemId) : undefined;
   return {
@@ -189,15 +199,16 @@ function screenView(): ScreenView {
     focusX: state.focusX,
     focusY: state.focusY,
     fog: currentFog(),
+    ink: currentInk(),
   };
 }
 
 function panelStateMessage(): PanelMessage {
-  return { type: "state", state, screens: server?.subscriberCount("screen") ?? 0, aspect: screenAspect, fog: currentFog() };
+  return { type: "state", state, screens: server?.subscriberCount("screen") ?? 0, aspect: screenAspect, fog: currentFog(), ink: currentInk() };
 }
 
-function publishFogged(): void {
-  publishPanel({ type: "fogged", ids: [...fog.keys()] });
+function publishMarks(): void {
+  publishPanel({ type: "marks", fogged: [...fog.keys()], inked: [...ink.keys()] });
 }
 
 /**
@@ -228,14 +239,23 @@ async function flushProjectState(): Promise<void> {
   clearTimeout(stateSaveTimer);
   stateSaveTimer = undefined;
   if (!active) return;
-  await Promise.all([writeFog(active.id, fog), writeRecent(active.id, recent)]).catch((e) =>
-    console.error(`Could not save fog and recent images: ${(e as Error).message}`),
-  );
+  await Promise.all([
+    writeImageMap(active.id, "fog.json", fog),
+    writeImageMap(active.id, "ink.json", ink),
+    writeRecent(active.id, recent),
+  ]).catch((e) => console.error(`Could not save fog, drawings and recent images: ${(e as Error).message}`));
 }
 
-/** A fog mask from the editor: empty (fully covered) or a PNG data URL of sane size. */
-function validMask(mask: unknown): mask is string {
-  return typeof mask === "string" && (mask === "" || (mask.startsWith("data:image/png;base64,") && mask.length < 4_000_000));
+const isPng = (v: string) => v.startsWith("data:image/png;base64,") && v.length < 8_000_000;
+
+/** Fog from the editor: null (none), "" (fully covered) or a PNG data URL of sane size. */
+function validFog(mask: unknown): mask is FogMask {
+  return mask === null || (typeof mask === "string" && (mask === "" || isPng(mask)));
+}
+
+/** Drawing from the editor: null (none) or a PNG data URL of sane size. */
+function validInk(v: unknown): v is Ink {
+  return v === null || (typeof v === "string" && isPng(v));
 }
 
 function publishPanel(msg: PanelMessage): void {
@@ -266,7 +286,7 @@ function handlePanelCommand(cmd: PanelCommand): void {
       if (!fog.has(cmd.itemId)) {
         fog.set(cmd.itemId, "");
         saveStateSoon();
-        publishFogged();
+        publishMarks();
       }
       const same = state.itemId === cmd.itemId;
       state = same
@@ -278,7 +298,7 @@ function handlePanelCommand(cmd: PanelCommand): void {
       if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId)) return;
       if (fog.delete(cmd.itemId)) {
         saveStateSoon();
-        publishFogged();
+        publishMarks();
       }
       const same = state.itemId === cmd.itemId;
       state = same
@@ -286,14 +306,17 @@ function handlePanelCommand(cmd: PanelCommand): void {
         : { mode: "image", itemId: cmd.itemId, zoom: 1, focusX: 0.5, focusY: 0.5, fog: false };
       break;
     }
-    case "fog-mask": {
-      if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId) || !validMask(cmd.mask)) return;
-      const isNew = !fog.has(cmd.itemId);
-      fog.set(cmd.itemId, cmd.mask);
+    case "apply-edits": {
+      if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId) || !validFog(cmd.fog) || !validInk(cmd.ink)) return;
+      if (cmd.fog === null) fog.delete(cmd.itemId);
+      else fog.set(cmd.itemId, cmd.fog);
+      if (cmd.ink === null) ink.delete(cmd.itemId);
+      else ink.set(cmd.itemId, cmd.ink);
       saveStateSoon();
-      if (isNew) publishFogged();
-      // Only the screen cares, and only if this image is on it under fog.
-      if (state.itemId !== cmd.itemId || !state.fog) return;
+      publishMarks();
+      // Only the screen cares, and only if this image is on it.
+      if (state.itemId !== cmd.itemId) return;
+      state = { ...state, fog: cmd.fog !== null };
       break;
     }
     case "blackout":

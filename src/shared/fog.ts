@@ -1,7 +1,8 @@
-// Fog of war drawing, shared by the players' screen, the DM preview and the fog editor.
+// Fog of war and drawings, shared by the players' screen, the DM preview and the editor.
 //
-// A mask is a PNG whose opaque pixels are the revealed parts of the image, at any
+// A fog mask is a PNG whose opaque pixels are the revealed parts of the image, at any
 // resolution (it is stretched over the image). "" means fully covered.
+// A drawing (ink) is a transparent PNG stretched over the image the same way.
 
 import { containRect } from "./view.ts";
 
@@ -86,4 +87,33 @@ export function drawFog(
     ctx.drawImage(mask, r.x, r.y, r.w, r.h);
     ctx.globalCompositeOperation = "source-over";
   }
+}
+
+/** Size a canvas to its box (device pixels) and clear it; returns the 2D context in CSS pixels. */
+function prepare(canvas: HTMLCanvasElement, boxW: number, boxH: number): CanvasRenderingContext2D | null {
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.round(boxW * dpr));
+  const h = Math.max(1, Math.round(boxH * dpr));
+  if (canvas.width !== w) canvas.width = w;
+  if (canvas.height !== h) canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, boxW, boxH);
+  return ctx;
+}
+
+/** Draw a drawing (ink) over the image area of a box laid out with object-fit: contain. */
+export function drawInk(
+  canvas: HTMLCanvasElement,
+  boxW: number,
+  boxH: number,
+  natW: number,
+  natH: number,
+  ink: CanvasImageSource | null,
+): void {
+  const ctx = prepare(canvas, boxW, boxH);
+  if (!ctx || !ink || !natW || !natH) return;
+  const r = containRect(boxW, boxH, natW, natH);
+  ctx.drawImage(ink, r.x, r.y, r.w, r.h);
 }

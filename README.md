@@ -120,7 +120,7 @@ Controls:
 - "Show again" or `R`: bring back the last image
 - `←` `→`: neighbouring image in the current tab, `1`–`9`: image by number
 - zoom for maps: the 1×–4× slider or a click on the preview (centres the players' screen on that point; at 1× it also zooms to 2×). `+` `−` change zoom, `0` and "Reset" reset
-- `E`: edit the fog of the image on screen
+- `E`: draw and edit the fog on the image on screen
 - `Shift+1`–`9`: image from the Recent palette
 - `/`: search by title
 
@@ -128,18 +128,23 @@ Controls:
 
 The **Recent** palette under the preview holds the last 9 images you showed, like the recent colours in a drawing app; each cell is numbered. A click (or `Shift+1`–`9`) brings an image back exactly as it was: with its fog and with the zoom and zoom point it had, and it stays in its cell. A different image shown from the list goes into cell 1 and pushes the others along. The palette is kept per project and survives restarts.
 
-A **green dot** on an image (in the list and in the palette) means it has a saved state: its fog comes back when you show it.
+A **green dot** on an image (in the list and in the palette) means it has a saved state: its fog or drawing comes back when you show it.
 
-### Fog of war
+### Fog of war and drawing
 
-Hide parts of an image (a dungeon map, a crime scene) and reveal them as the players explore.
+Hide parts of an image (a dungeon map, a crime scene) and reveal them as the players explore, or draw on it: an arrow at a door, a circle around a clue.
 
 - Every image card has an eye in its corner. **Closed eye**: show the image under fog, fully covered at first. Once an image has fog, the eye turns into an **open eye**: it removes the fog and shows the whole image.
-- **Edit fog** (or `E`) under the preview opens the editor for the image on screen. Paint with **Reveal** or **Hide**; hold Alt (Option) to paint with the other brush, `X` switches it, `[` `]` change the brush size, "Reveal all" / "Cover all" do it at once. Closing the editor with everything revealed removes the fog from the image, the same as the open eye. You see the image through a translucent fog; the players see the new fog only when you press **Done**, so a slip of the brush never reaches them. **Cancel** (or Esc) throws the changes away.
-- Fog is remembered per image: showing that image again later brings its fog back exactly as you left it, also after restarting the app. "Remove fog" (or the open eye) forgets it.
-- The fog follows zoom: zooming in on a fogged map keeps hidden parts hidden.
+- **Draw & fog** (or `E`) under the preview opens the editor for the image on screen:
+  - **Reveal** / **Hide** paint the fog with a soft brush; "Reveal all" / "Cover all" do it at once.
+  - **Draw** paints free-hand lines in one of six colours; **Erase** rubs the drawing out; "Clear drawing" removes all of it.
+  - Keys: `R` reveal, `H` hide, `D` draw, `E` erase, Alt (Option) for the opposite tool while held, `[` `]` size (each tool keeps its own size).
+  - You see the image through a translucent fog. The players see the changes only when you press **Done**, so a slip of the brush never reaches them; **Cancel** (or Esc) throws them away.
+- The drawing lies above the fog, so an arrow can point into a hidden area.
+- Fog and drawing are remembered per image: showing that image again later brings them back exactly as you left them, also after restarting the app. The drawing stays until you clear it; "Remove fog" (or the open eye) forgets only the fog. Closing the editor with everything revealed removes the fog, the same as the open eye.
+- Both follow zoom: zooming in on a fogged map keeps hidden parts hidden.
 
-Fog is stored in `projects/<id>/fog.json` and the Recent palette in `projects/<id>/recent.json` in the app data folder.
+Fog is stored in `projects/<id>/fog.json`, drawings in `projects/<id>/ink.json` and the Recent palette in `projects/<id>/recent.json` in the app data folder.
 
 Letter shortcuts also work with a non-Latin (e.g. Ukrainian) keyboard layout.
 
@@ -188,7 +193,7 @@ Code:
 - `src/server.ts`: HTTP API, WebSocket, screen state, active project, other-devices mode and master password
 - `src/store.ts`: app data folder, `settings.json`, `projects.json`
 - `src/projects/folder.ts`: folder scanning and watching
-- `src/shared/fog.ts`, `src/panel/fog-editor.ts`: fog of war drawing and the brush editor
+- `src/shared/fog.ts`, `src/panel/fog-editor.ts`: rendering of fog and drawings, and the editor
 - `src/projects/obsidian.ts`: Obsidian vault scanning (images grouped by the notes that embed them)
 - `src/sync/`: Notion discovery (`notion.ts`) and incremental download (`index.ts`)
 - `src/os/`: native folder dialog, opening the browser

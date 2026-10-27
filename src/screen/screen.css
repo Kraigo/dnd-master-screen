@@ -35,7 +35,8 @@ html.idle * {
 }
 
 .layer img,
-.layer .fog {
+.layer .fog,
+.layer .ink {
   position: absolute;
   inset: 0;
   width: 100%;

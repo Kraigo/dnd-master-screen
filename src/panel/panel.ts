@@ -6,6 +6,7 @@ import {
   isLocalProject,
   type AppState,
   type FogMask,
+  type Ink,
   type Manifest,
   type ManifestGroup,
   type ManifestItem,
@@ -14,7 +15,7 @@ import {
   type ScreenState,
   type SyncStatus,
 } from "../shared/types.ts";
-import { drawFog, loadMask } from "../shared/fog.ts";
+import { drawFog, drawInk, loadMask } from "../shared/fog.ts";
 import { clamp, computeView, MAX_ZOOM, MIN_ZOOM, pointToFocus, transformCss, type ViewTransform } from "../shared/view.ts";
 import { FogEditor } from "./fog-editor.ts";
 
@@ -24,6 +25,7 @@ const els = {
   preview: $("preview"),
   previewImg: $<HTMLImageElement>("preview-img"),
   previewFog: $<HTMLCanvasElement>("preview-fog"),
+  previewInk: $<HTMLCanvasElement>("preview-ink"),
   fogActions: $("fog-actions"),
   btnFogEdit: $<HTMLButtonElement>("btn-fog-edit"),
   btnFogToggle: $<HTMLButtonElement>("btn-fog-toggle"),
@@ -96,6 +98,11 @@ let manifest: Manifest | null = null;
 let activeGroup = "";
 let query = "";
 let screen: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, focusY: 0.5, fog: false };
+/** Drawing on what is on screen now. */
+let liveInk: Ink = null;
+let liveInkImg: HTMLImageElement | null = null;
+/** Items with a drawing (they get the saved-state dot, as fogged ones do). */
+let inked = new Set<string>();
 /** Fog of what is on screen now, and the items that have fog (eye icons). */
 let liveFog: FogMask = null;
 let liveFogImg: HTMLImageElement | null = null;
@@ -122,17 +129,13 @@ function send(cmd: unknown): void {
   socket.send(cmd);
 }
 
-const fogEditor = new FogEditor(
-  (itemId, mask) => send({ type: "fog-mask", itemId, mask }),
-  // Nothing left to hide: drop the fog, as the open eye does, so no empty state is kept.
-  (itemId) => send({ type: "unfog", itemId }),
-);
+const fogEditor = new FogEditor((itemId, fog, ink) => send({ type: "apply-edits", itemId, fog, ink }));
 
-/** Open the fog editor for the image on screen (it must be under fog). */
+/** Open the editor (drawing and fog) for the image on screen. */
 function editFog(): void {
   const item = screen.itemId ? itemsById.get(screen.itemId) : undefined;
-  if (!item?.file || !screen.fog) return;
-  void fogEditor.show(item.id, item.label, `/images/${item.file}`, liveFog ?? "");
+  if (!item?.file) return;
+  void fogEditor.show(item.id, item.label, `/images/${item.file}`, screen.fog ? (liveFog ?? "") : null, liveInk);
 }
 
 els.btnFogEdit.addEventListener("click", editFog);
@@ -170,6 +173,7 @@ async function loadState(): Promise<void> {
   app = (await res.json()) as AppState;
   manifest = app.manifest;
   fogged = new Set(app.fogged);
+  inked = new Set(app.inked);
   recent = app.recent;
   if (!sync || !sync.running) sync = app.sync;
   itemsById = new Map();
@@ -229,11 +233,15 @@ function renderTabs(groups: ManifestGroup[]): void {
   );
 }
 
-/** Green dot: the image has a saved state (its fog) that comes back when it is shown. */
+function hasSavedState(id: string): boolean {
+  return fogged.has(id) || inked.has(id);
+}
+
+/** Green dot: the image has a saved state (fog or a drawing) that comes back when it is shown. */
 function savedDot(): HTMLElement {
   const dot = document.createElement("span");
   dot.className = "saved-dot";
-  dot.title = "Has saved fog";
+  dot.title = "Has saved fog or drawing";
   return dot;
 }
 
@@ -266,7 +274,7 @@ function renderRecent(): void {
     img.draggable = false;
     b.append(img);
     b.append(slotNumber(i));
-    if (fogged.has(item.id)) b.append(savedDot());
+    if (hasSavedState(item.id)) b.append(savedDot());
     b.addEventListener("click", () => send({ type: "show-recent", itemId: item.id }));
     tiles.push(b);
   }
@@ -328,7 +336,7 @@ function itemButton(item: ManifestItem, index: number): HTMLButtonElement {
     img.decoding = "async";
     img.draggable = false;
     thumb.append(img);
-    if (fogged.has(item.id)) thumb.append(savedDot());
+    if (hasSavedState(item.id)) thumb.append(savedDot());
     if (index < 9) {
       const n = document.createElement("span");
       n.className = "num";
@@ -484,6 +492,8 @@ function updatePreviewTransform(): void {
   const img = els.previewImg;
   if (!img.naturalWidth) {
     previewView = null;
+    els.previewFog.hidden = true;
+    drawInk(els.previewInk, 0, 0, 0, 0, null);
     return;
   }
   const box = els.preview.getBoundingClientRect();
@@ -492,6 +502,19 @@ function updatePreviewTransform(): void {
   els.previewFog.style.transform = img.style.transform;
   els.previewFog.hidden = liveFog === null;
   if (liveFog !== null) drawFog(els.previewFog, box.width, box.height, img.naturalWidth, img.naturalHeight, liveFogImg);
+  els.previewInk.style.transform = img.style.transform;
+  drawInk(els.previewInk, box.width, box.height, img.naturalWidth, img.naturalHeight, liveInkImg);
+}
+
+let liveInkToken = 0;
+async function setLiveInk(ink: Ink): Promise<void> {
+  if (ink === liveInk) return;
+  const token = ++liveInkToken;
+  const img = ink ? await loadMask(ink) : null;
+  if (token !== liveInkToken) return;
+  liveInk = ink;
+  liveInkImg = img;
+  updatePreviewTransform();
 }
 
 /** New fog for the preview: decode, then redraw (older decodes that finish late are dropped). */
@@ -533,7 +556,7 @@ function renderLive(): void {
   els.btnBlack.disabled = screen.mode === "black";
   els.btnRestore.disabled = !(screen.mode === "black" && src);
   els.fogActions.hidden = !src;
-  els.btnFogEdit.disabled = !screen.fog;
+  els.btnFogEdit.disabled = !src;
   els.btnFogToggle.textContent = screen.fog ? "Remove fog" : "Cover with fog";
   markOnScreen();
   markRecentOnScreen();
@@ -1064,6 +1087,7 @@ function onMessage(msg: PanelMessage): void {
     case "state": {
       screen = msg.state;
       void setLiveFog(msg.fog);
+      void setLiveInk(msg.ink);
       els.preview.style.setProperty("--screen-aspect", String(msg.aspect));
       const n = msg.screens;
       els.screenDot.classList.toggle("on", n > 0);
@@ -1072,8 +1096,9 @@ function onMessage(msg: PanelMessage): void {
       renderLive();
       break;
     }
-    case "fogged":
-      fogged = new Set(msg.ids);
+    case "marks":
+      fogged = new Set(msg.fogged);
+      inked = new Set(msg.inked);
       renderLibrary();
       renderRecent();
       break;

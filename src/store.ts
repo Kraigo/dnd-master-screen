@@ -34,17 +34,17 @@ export function projectDir(id: string): string {
   return join(DATA_DIR, "projects", id);
 }
 
-/** Fog of war of a project's images: item id -> mask (see FogMask). */
-export async function readFog(id: string): Promise<Map<string, string>> {
-  const data = await readJson<Record<string, unknown>>(join(projectDir(id), "fog.json"));
+/** Per-image data of a project, item id -> string: fog.json (fog masks), ink.json (drawings). */
+export async function readImageMap(id: string, file: "fog.json" | "ink.json"): Promise<Map<string, string>> {
+  const data = await readJson<Record<string, unknown>>(join(projectDir(id), file));
   const out = new Map<string, string>();
   for (const [k, v] of Object.entries(data ?? {})) if (typeof v === "string") out.set(k, v);
   return out;
 }
 
-export async function writeFog(id: string, fog: Map<string, string>): Promise<void> {
+export async function writeImageMap(id: string, file: "fog.json" | "ink.json", map: Map<string, string>): Promise<void> {
   await mkdir(projectDir(id), { recursive: true });
-  await writeJsonAtomic(join(projectDir(id), "fog.json"), Object.fromEntries(fog));
+  await writeJsonAtomic(join(projectDir(id), file), Object.fromEntries(map));
 }
 
 /** A recently shown image and the view it had (the recents palette). */

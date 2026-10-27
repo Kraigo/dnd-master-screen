@@ -55,6 +55,8 @@ export interface AppState {
   sync: SyncStatus;
   /** Items of the active project that have fog of war. */
   fogged: string[];
+  /** Items of the active project that have a drawing on them. */
+  inked: string[];
   /** Recently shown items of the active project, newest first (at most 9). */
   recent: string[];
   notion: { tokenSet: boolean; workspace: string | null };
@@ -88,6 +90,12 @@ export interface ScreenState {
 export type FogMask = string | null;
 
 /**
+ * Drawing on an image (arrows, circles): null = none, otherwise a transparent PNG
+ * data URL stretched over the image, drawn above the fog.
+ */
+export type Ink = string | null;
+
+/**
  * What the players' screen receives. Deliberately carries no labels or ids,
  * only the image URL (an opaque hashed file name) and the view transform.
  */
@@ -98,6 +106,7 @@ export interface ScreenView {
   focusX: number;
   focusY: number;
   fog: FogMask;
+  ink: Ink;
 }
 
 export interface SyncStatus {
@@ -126,8 +135,8 @@ export type PanelCommand =
   | { type: "show-fogged"; itemId: string }
   /** Forget the fog of an image and show it fully. */
   | { type: "unfog"; itemId: string }
-  /** New fog of an image, from the fog editor. */
-  | { type: "fog-mask"; itemId: string; mask: string }
+  /** Result of the editor's Done: the image's fog (null = none) and drawing (null = none). */
+  | { type: "apply-edits"; itemId: string; fog: FogMask; ink: Ink }
   /** Show an image from the recents palette with the zoom it had then (and its fog). */
   | { type: "show-recent"; itemId: string };
 
@@ -136,9 +145,9 @@ export type ScreenHello = { type: "viewport"; width: number; height: number };
 
 // Server -> panel.
 export type PanelMessage =
-  | { type: "state"; state: ScreenState; screens: number; aspect: number; fog: FogMask }
-  /** Items that have fog of war (the eye icons). */
-  | { type: "fogged"; ids: string[] }
+  | { type: "state"; state: ScreenState; screens: number; aspect: number; fog: FogMask; ink: Ink }
+  /** Items that have fog of war (eye icons) or a drawing (with fog: the saved-state dot). */
+  | { type: "marks"; fogged: string[]; inked: string[] }
   /** Recently shown items, newest first (the recents palette). */
   | { type: "recent"; ids: string[] }
   | { type: "sync"; status: SyncStatus }
