@@ -200,12 +200,18 @@ function publishFogged(): void {
   publishPanel({ type: "fogged", ids: [...fog.keys()] });
 }
 
-/** Put what is on screen first in the recents palette, keeping its current view. */
-function touchRecent(): void {
+/**
+ * Record what is on screen in the recents palette, with its current view. A newly
+ * shown image goes first; an image already in the palette keeps its place unless
+ * `toFront` (so picking one from the palette, zooming or toggling fog never reorders).
+ */
+function touchRecent(toFront: boolean): void {
   if (!state.itemId || !fileById.has(state.itemId)) return;
   const entry: RecentEntry = { itemId: state.itemId, zoom: state.zoom, focusX: state.focusX, focusY: state.focusY };
   const order = recent.map((r) => r.itemId).join();
-  recent = [entry, ...recent.filter((r) => r.itemId !== entry.itemId)].slice(0, RECENT_MAX);
+  const at = recent.findIndex((r) => r.itemId === entry.itemId);
+  if (at >= 0 && !toFront) recent[at] = entry;
+  else recent = [entry, ...recent.filter((r) => r.itemId !== entry.itemId)].slice(0, RECENT_MAX);
   saveStateSoon();
   // The panel only shows the order; zoom changes alone need no message.
   if (recent.map((r) => r.itemId).join() !== order) publishPanel({ type: "recent", ids: recent.map((r) => r.itemId) });
@@ -247,6 +253,7 @@ function num(v: unknown, fallback: number): number {
 }
 
 function handlePanelCommand(cmd: PanelCommand): void {
+  const before = state.itemId;
   switch (cmd.type) {
     case "show": {
       if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId)) return;
@@ -320,7 +327,11 @@ function handlePanelCommand(cmd: PanelCommand): void {
     default:
       return;
   }
-  if (cmd.type !== "blackout" && cmd.type !== "restore") touchRecent();
+  if (cmd.type !== "blackout" && cmd.type !== "restore") {
+    // Only a different image shown from the library moves to the front of the palette.
+    const fromLibrary = cmd.type === "show" || cmd.type === "show-fogged" || cmd.type === "unfog";
+    touchRecent(fromLibrary && state.itemId !== before);
+  }
   publishState();
 }
 

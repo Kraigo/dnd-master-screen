@@ -126,7 +126,7 @@ Controls:
 
 ### Recent images
 
-The **Recent** palette under the preview holds the last 9 images you showed, newest first, like the recent colours in a drawing app. A click (or `Shift+1`–`9`) brings an image back exactly as it was: with its fog and with the zoom and zoom point it had. Showing an image that is already in the palette moves it to the front. The palette is kept per project and survives restarts.
+The **Recent** palette under the preview holds the last 9 images you showed, like the recent colours in a drawing app; each cell is numbered. A click (or `Shift+1`–`9`) brings an image back exactly as it was: with its fog and with the zoom and zoom point it had, and it stays in its cell. A different image shown from the list goes into cell 1 and pushes the others along. The palette is kept per project and survives restarts.
 
 A **green dot** on an image (in the list and in the palette) means it has a saved state: its fog comes back when you show it.
 
@@ -135,7 +135,7 @@ A **green dot** on an image (in the list and in the palette) means it has a save
 Hide parts of an image (a dungeon map, a crime scene) and reveal them as the players explore.
 
 - Every image card has an eye in its corner. **Closed eye**: show the image under fog, fully covered at first. Once an image has fog, the eye turns into an **open eye**: it removes the fog and shows the whole image.
-- **Edit fog** (or `E`) under the preview opens the editor for the image on screen. Paint with **Reveal** or **Hide**; hold Alt (Option) to paint with the other brush, `X` switches it, `[` `]` change the brush size, "Reveal all" / "Cover all" do it at once. The players see every change while you paint; you see the image through a translucent fog.
+- **Edit fog** (or `E`) under the preview opens the editor for the image on screen. Paint with **Reveal** or **Hide**; hold Alt (Option) to paint with the other brush, `X` switches it, `[` `]` change the brush size, "Reveal all" / "Cover all" do it at once. Closing the editor with everything revealed removes the fog from the image, the same as the open eye. The players see every change while you paint; you see the image through a translucent fog.
 - Fog is remembered per image: showing that image again later brings its fog back exactly as you left it, also after restarting the app. "Remove fog" (or the open eye) forgets it.
 - The fog follows zoom: zooming in on a fogged map keeps hidden parts hidden.
 

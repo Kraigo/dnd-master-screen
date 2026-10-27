@@ -928,6 +928,28 @@ select {
   cursor: default;
 }
 
+.recent-num {
+  position: absolute;
+  left: 4px;
+  top: 3px;
+  min-width: 16px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(20, 25, 27, 0.75);
+  color: var(--paper-dim);
+  font-size: 0.72rem;
+  line-height: 16px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+}
+
+.recent-tile.is-empty .recent-num {
+  background: none;
+  color: var(--paper-faint);
+  opacity: 0.6;
+}
+
 .recent-tile.on-screen {
   outline: 2px solid var(--ochre);
   outline-offset: 2px;

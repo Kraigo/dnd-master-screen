@@ -31,7 +31,11 @@ export class FogEditor {
   private dirty = false;
   private frame = 0;
 
-  constructor(private readonly onChange: (itemId: string, mask: string) => void) {
+  constructor(
+    private readonly onChange: (itemId: string, mask: string) => void,
+    /** Called on close when nothing is hidden any more: the image needs no fog. */
+    private readonly onFullyRevealed: (itemId: string) => void,
+  ) {
     const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
     this.dialog = $<HTMLDialogElement>("fog-editor");
     this.title = $("fog-title");
@@ -46,7 +50,7 @@ export class FogEditor {
     $("fog-reveal-all").addEventListener("click", () => this.fill(true));
     $("fog-cover-all").addEventListener("click", () => this.fill(false));
     $("fog-done").addEventListener("click", () => this.dialog.close());
-    this.dialog.addEventListener("close", () => this.flush());
+    this.dialog.addEventListener("close", () => this.close());
     this.size.addEventListener("input", () => this.updateCursorSize());
 
     this.stage.addEventListener("pointerdown", (e) => this.down(e));
@@ -208,6 +212,19 @@ export class FogEditor {
       const wait = Math.max(0, SEND_EVERY_MS - (performance.now() - this.lastSent));
       this.sendTimer = setTimeout(() => this.flush(), wait);
     }
+  }
+
+  private close(): void {
+    this.flush();
+    if (this.itemId && this.isFullyRevealed()) this.onFullyRevealed(this.itemId);
+  }
+
+  /** Every pixel of the mask is revealed (as after "Reveal all"). */
+  private isFullyRevealed(): boolean {
+    if (!this.mask.width) return false;
+    const data = this.mask.getContext("2d")!.getImageData(0, 0, this.mask.width, this.mask.height).data;
+    for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) return false;
+    return true;
   }
 
   /** Send the current mask if it changed since the last send. */

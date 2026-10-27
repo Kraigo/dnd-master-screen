@@ -122,7 +122,11 @@ function send(cmd: unknown): void {
   socket.send(cmd);
 }
 
-const fogEditor = new FogEditor((itemId, mask) => send({ type: "fog-mask", itemId, mask }));
+const fogEditor = new FogEditor(
+  (itemId, mask) => send({ type: "fog-mask", itemId, mask }),
+  // Nothing left to hide: drop the fog, as the open eye does, so no empty state is kept.
+  (itemId) => send({ type: "unfog", itemId }),
+);
 
 /** Open the fog editor for the image on screen (it must be under fog). */
 function editFog(): void {
@@ -245,6 +249,7 @@ function renderRecent(): void {
     if (!item?.file) {
       const empty = document.createElement("span");
       empty.className = "recent-tile is-empty";
+      empty.append(slotNumber(i));
       tiles.push(empty);
       continue;
     }
@@ -260,12 +265,21 @@ function renderRecent(): void {
     img.decoding = "async";
     img.draggable = false;
     b.append(img);
+    b.append(slotNumber(i));
     if (fogged.has(item.id)) b.append(savedDot());
     b.addEventListener("click", () => send({ type: "show-recent", itemId: item.id }));
     tiles.push(b);
   }
   els.recentGrid.replaceChildren(...tiles);
   markRecentOnScreen();
+}
+
+/** Slot number in the corner, matching Shift+1–9. */
+function slotNumber(i: number): HTMLElement {
+  const n = document.createElement("span");
+  n.className = "recent-num";
+  n.textContent = String(i + 1);
+  return n;
 }
 
 function markRecentOnScreen(): void {
