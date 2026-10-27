@@ -217,7 +217,7 @@ function touchRecent(toFront: boolean): void {
   if (recent.map((r) => r.itemId).join() !== order) publishPanel({ type: "recent", ids: recent.map((r) => r.itemId) });
 }
 
-/** Save fog and recents a moment after the last change (the editor sends many updates while painting). */
+/** Save fog and recents a moment after the last change (zoom and palette changes come in bursts). */
 function saveStateSoon(): void {
   clearTimeout(stateSaveTimer);
   stateSaveTimer = setTimeout(() => void flushProjectState(), 1000);

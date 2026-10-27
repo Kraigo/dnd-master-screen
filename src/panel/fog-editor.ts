@@ -1,13 +1,12 @@
 // Fog of war editor: paint over the image to reveal or hide parts of it.
-// The DM sees the image through a translucent fog; every change goes to the
-// players' screen while painting (throttled), and once more when a stroke ends.
+// The DM sees the image through a translucent fog. Nothing reaches the players'
+// screen while painting: the fog is applied on "Done"; "Cancel" (or Esc) discards it.
 
 import { drawFog, loadMask } from "../shared/fog.ts";
 import { containRect } from "../shared/view.ts";
 
-/** Longest side of the mask in pixels: enough for soft brush edges, small enough to send live. */
+/** Longest side of the mask in pixels: enough for soft brush edges, small enough to send quickly. */
 const MASK_MAX = 1024;
-const SEND_EVERY_MS = 120;
 
 type Mode = "reveal" | "hide";
 
@@ -26,9 +25,10 @@ export class FogEditor {
   private itemId: string | null = null;
   private drawing = false;
   private last: { x: number; y: number } | null = null;
-  private sendTimer: ReturnType<typeof setTimeout> | undefined;
-  private lastSent = 0;
+  /** Painted since the editor opened. */
   private dirty = false;
+  /** The editor is being closed with "Done" (any other close discards the changes). */
+  private applying = false;
   private frame = 0;
 
   constructor(
@@ -49,7 +49,11 @@ export class FogEditor {
     for (const b of this.modeButtons) b.addEventListener("click", () => this.setMode(b.dataset.fogMode as Mode));
     $("fog-reveal-all").addEventListener("click", () => this.fill(true));
     $("fog-cover-all").addEventListener("click", () => this.fill(false));
-    $("fog-done").addEventListener("click", () => this.dialog.close());
+    $("fog-done").addEventListener("click", () => {
+      this.applying = true;
+      this.dialog.close();
+    });
+    $("fog-cancel").addEventListener("click", () => this.dialog.close());
     this.dialog.addEventListener("close", () => this.close());
     this.size.addEventListener("input", () => this.updateCursorSize());
 
@@ -86,6 +90,8 @@ export class FogEditor {
     ctx.clearRect(0, 0, this.mask.width, this.mask.height);
     const loaded = await loadMask(mask);
     if (loaded) ctx.drawImage(loaded, 0, 0, this.mask.width, this.mask.height);
+    this.dirty = false;
+    this.applying = false;
     this.setMode("reveal");
     this.redraw();
   }
@@ -171,7 +177,6 @@ export class FogEditor {
     if (!this.drawing) return;
     this.drawing = false;
     this.last = null;
-    this.flush();
   }
 
   private placeCursor(px: number, py: number): void {
@@ -188,7 +193,6 @@ export class FogEditor {
       ctx.fillRect(0, 0, this.mask.width, this.mask.height);
     }
     this.changed();
-    this.flush();
   }
 
   private key(e: KeyboardEvent): void {
@@ -203,20 +207,23 @@ export class FogEditor {
     }
   }
 
-  /** Redraw now (next frame) and send soon. */
+  /** Redraw on the next frame. */
   private changed(): void {
     this.dirty = true;
     cancelAnimationFrame(this.frame);
     this.frame = requestAnimationFrame(() => this.redraw());
-    if (this.sendTimer === undefined) {
-      const wait = Math.max(0, SEND_EVERY_MS - (performance.now() - this.lastSent));
-      this.sendTimer = setTimeout(() => this.flush(), wait);
-    }
   }
 
+  /** "Done" applies the fog (or drops it when nothing is hidden); anything else discards it. */
   private close(): void {
-    this.flush();
-    if (this.itemId && this.isFullyRevealed()) this.onFullyRevealed(this.itemId);
+    const apply = this.applying;
+    this.applying = false;
+    this.drawing = false;
+    this.last = null;
+    if (!apply || !this.itemId) return;
+    if (this.isFullyRevealed()) this.onFullyRevealed(this.itemId);
+    else if (this.dirty) this.onChange(this.itemId, this.mask.toDataURL("image/png"));
+    this.dirty = false;
   }
 
   /** Every pixel of the mask is revealed (as after "Reveal all"). */
@@ -225,16 +232,6 @@ export class FogEditor {
     const data = this.mask.getContext("2d")!.getImageData(0, 0, this.mask.width, this.mask.height).data;
     for (let i = 3; i < data.length; i += 4) if (data[i] !== 255) return false;
     return true;
-  }
-
-  /** Send the current mask if it changed since the last send. */
-  private flush(): void {
-    clearTimeout(this.sendTimer);
-    this.sendTimer = undefined;
-    if (!this.dirty || !this.itemId) return;
-    this.dirty = false;
-    this.lastSent = performance.now();
-    this.onChange(this.itemId, this.mask.toDataURL("image/png"));
   }
 
   private redraw(): void {

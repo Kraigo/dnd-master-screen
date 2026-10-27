@@ -1060,6 +1060,8 @@ select {
 .fog-editor[open] {
   display: grid;
   grid-template-rows: auto 1fr auto;
+  /* On small screens the toolbar wraps; keep room to paint and let the editor scroll. */
+  overflow: auto;
 }
 
 .fog-bar {
@@ -1117,7 +1119,7 @@ select {
 
 .fog-stage {
   position: relative;
-  min-height: 0;
+  min-height: max(220px, 55vh);
   margin: 16px;
   overflow: hidden;
   cursor: none;

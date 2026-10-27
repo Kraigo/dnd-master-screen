@@ -212,6 +212,7 @@
         <label class="fog-size">Brush <input id="fog-size" type="range" min="1" max="30" value="7" /></label>
         <button type="button" class="quiet" id="fog-reveal-all">Reveal all</button>
         <button type="button" class="quiet" id="fog-cover-all">Cover all</button>
+        <button type="button" class="quiet" id="fog-cancel">Cancel</button>
         <button type="button" class="act" id="fog-done">Done</button>
       </header>
       <div class="fog-stage" id="fog-stage">
@@ -220,8 +221,8 @@
         <div class="fog-cursor" id="fog-cursor" hidden></div>
       </div>
       <p class="fog-hint">
-        Players see every change as you paint. Hold Alt (Option) to paint with the other brush, X switches it,
-        [ and ] change its size.
+        The players see the new fog when you press Done; Cancel or Esc throws the changes away. Hold Alt (Option)
+        to paint with the other brush, X switches it, [ and ] change its size.
       </p>
     </dialog>
 
