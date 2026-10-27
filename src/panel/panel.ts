@@ -27,6 +27,8 @@ const els = {
   fogActions: $("fog-actions"),
   btnFogEdit: $<HTMLButtonElement>("btn-fog-edit"),
   btnFogToggle: $<HTMLButtonElement>("btn-fog-toggle"),
+  recent: $("recent"),
+  recentGrid: $("recent-grid"),
   previewFocus: $("preview-focus"),
   liveLabel: $("live-label"),
   zoom: $("zoom"),
@@ -98,6 +100,9 @@ let screen: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, f
 let liveFog: FogMask = null;
 let liveFogImg: HTMLImageElement | null = null;
 let fogged = new Set<string>();
+/** Recently shown items, newest first (the recents palette). */
+let recent: string[] = [];
+const RECENT_SLOTS = 9;
 let sync: SyncStatus | null = null;
 let itemsById = new Map<string, ManifestItem>();
 let visible: ManifestItem[] = [];
@@ -161,6 +166,7 @@ async function loadState(): Promise<void> {
   app = (await res.json()) as AppState;
   manifest = app.manifest;
   fogged = new Set(app.fogged);
+  recent = app.recent;
   if (!sync || !sync.running) sync = app.sync;
   itemsById = new Map();
   for (const g of manifest?.groups ?? []) for (const it of g.items) if (!itemsById.has(it.id)) itemsById.set(it.id, it);
@@ -176,6 +182,7 @@ async function loadState(): Promise<void> {
   if (!manifest?.groups.some((g) => g.id === activeGroup)) activeGroup = manifest?.groups[0]?.id ?? "";
   renderProjects();
   renderLibrary();
+  renderRecent();
   renderLive();
   renderSync();
 }
@@ -218,6 +225,55 @@ function renderTabs(groups: ManifestGroup[]): void {
   );
 }
 
+/** Green dot: the image has a saved state (its fog) that comes back when it is shown. */
+function savedDot(): HTMLElement {
+  const dot = document.createElement("span");
+  dot.className = "saved-dot";
+  dot.title = "Has saved fog";
+  return dot;
+}
+
+// ---------------------------------------------------------------------------
+// Recents palette: the last 9 images shown, newest first; a click brings one back
+// with the zoom it had and its fog.
+
+function renderRecent(): void {
+  els.recent.hidden = !app?.activeProjectId;
+  const tiles: HTMLElement[] = [];
+  for (let i = 0; i < RECENT_SLOTS; i++) {
+    const item = recent[i] ? itemsById.get(recent[i]!) : undefined;
+    if (!item?.file) {
+      const empty = document.createElement("span");
+      empty.className = "recent-tile is-empty";
+      tiles.push(empty);
+      continue;
+    }
+    const b = document.createElement("button");
+    b.type = "button";
+    b.className = "recent-tile";
+    b.dataset.id = item.id;
+    b.title = `${item.label} (Shift+${i + 1})`;
+    b.setAttribute("aria-label", `Show again: ${item.label}`);
+    const img = document.createElement("img");
+    img.src = `/images/${item.file}`;
+    img.alt = "";
+    img.decoding = "async";
+    img.draggable = false;
+    b.append(img);
+    if (fogged.has(item.id)) b.append(savedDot());
+    b.addEventListener("click", () => send({ type: "show-recent", itemId: item.id }));
+    tiles.push(b);
+  }
+  els.recentGrid.replaceChildren(...tiles);
+  markRecentOnScreen();
+}
+
+function markRecentOnScreen(): void {
+  for (const el of els.recentGrid.querySelectorAll<HTMLElement>(".recent-tile[data-id]")) {
+    el.classList.toggle("on-screen", el.dataset.id === screen.itemId && screen.mode === "image");
+  }
+}
+
 const EYE_OPEN =
   '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
 const EYE_CLOSED =
@@ -258,6 +314,7 @@ function itemButton(item: ManifestItem, index: number): HTMLButtonElement {
     img.decoding = "async";
     img.draggable = false;
     thumb.append(img);
+    if (fogged.has(item.id)) thumb.append(savedDot());
     if (index < 9) {
       const n = document.createElement("span");
       n.className = "num";
@@ -465,6 +522,7 @@ function renderLive(): void {
   els.btnFogEdit.disabled = !screen.fog;
   els.btnFogToggle.textContent = screen.fog ? "Remove fog" : "Cover with fog";
   markOnScreen();
+  markRecentOnScreen();
 }
 
 function formatZoom(z: number): string {
@@ -598,6 +656,11 @@ document.addEventListener("keydown", (e) => {
       return;
   }
   const digit = /^(?:Digit|Numpad)([1-9])$/.exec(e.code);
+  if (digit && e.shiftKey) {
+    const id = recent[Number(digit[1]) - 1];
+    if (id) send({ type: "show-recent", itemId: id });
+    return;
+  }
   if (digit) {
     const item = visible[Number(digit[1]) - 1];
     if (item) show(item.id);
@@ -998,6 +1061,11 @@ function onMessage(msg: PanelMessage): void {
     case "fogged":
       fogged = new Set(msg.ids);
       renderLibrary();
+      renderRecent();
+      break;
+    case "recent":
+      recent = msg.ids;
+      renderRecent();
       break;
     case "sync":
       sync = msg.status;

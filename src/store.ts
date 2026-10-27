@@ -47,6 +47,29 @@ export async function writeFog(id: string, fog: Map<string, string>): Promise<vo
   await writeJsonAtomic(join(projectDir(id), "fog.json"), Object.fromEntries(fog));
 }
 
+/** A recently shown image and the view it had (the recents palette). */
+export interface RecentEntry {
+  itemId: string;
+  zoom: number;
+  focusX: number;
+  focusY: number;
+}
+
+export async function readRecent(id: string): Promise<RecentEntry[]> {
+  const data = await readJson<unknown[]>(join(projectDir(id), "recent.json"));
+  return (Array.isArray(data) ? data : []).filter(
+    (r): r is RecentEntry =>
+      !!r &&
+      typeof (r as RecentEntry).itemId === "string" &&
+      [(r as RecentEntry).zoom, (r as RecentEntry).focusX, (r as RecentEntry).focusY].every((n) => typeof n === "number"),
+  );
+}
+
+export async function writeRecent(id: string, recent: RecentEntry[]): Promise<void> {
+  await mkdir(projectDir(id), { recursive: true });
+  await writeJsonAtomic(join(projectDir(id), "recent.json"), recent);
+}
+
 /** Write via a temp file + rename so a crash never leaves a half-written file. */
 export async function writeJsonAtomic(path: string, data: unknown, mode?: number): Promise<void> {
   const tmp = `${path}.tmp`;

@@ -121,7 +121,14 @@ Controls:
 - `←` `→`: neighbouring image in the current tab, `1`–`9`: image by number
 - zoom for maps: the 1×–4× slider or a click on the preview (centres the players' screen on that point; at 1× it also zooms to 2×). `+` `−` change zoom, `0` and "Reset" reset
 - `E`: edit the fog of the image on screen
+- `Shift+1`–`9`: image from the Recent palette
 - `/`: search by title
+
+### Recent images
+
+The **Recent** palette under the preview holds the last 9 images you showed, newest first, like the recent colours in a drawing app. A click (or `Shift+1`–`9`) brings an image back exactly as it was: with its fog and with the zoom and zoom point it had. Showing an image that is already in the palette moves it to the front. The palette is kept per project and survives restarts.
+
+A **green dot** on an image (in the list and in the palette) means it has a saved state: its fog comes back when you show it.
 
 ### Fog of war
 
@@ -132,7 +139,7 @@ Hide parts of an image (a dungeon map, a crime scene) and reveal them as the pla
 - Fog is remembered per image: showing that image again later brings its fog back exactly as you left it, also after restarting the app. "Remove fog" (or the open eye) forgets it.
 - The fog follows zoom: zooming in on a fogged map keeps hidden parts hidden.
 
-Fog is stored in `projects/<id>/fog.json` in the app data folder.
+Fog is stored in `projects/<id>/fog.json` and the Recent palette in `projects/<id>/recent.json` in the app data folder.
 
 Letter shortcuts also work with a non-Latin (e.g. Ukrainian) keyboard layout.
 

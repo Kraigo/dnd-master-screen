@@ -879,6 +879,81 @@ select {
   box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
 }
 
+/* ---------- recents palette ---------- */
+
+.recent {
+  margin-top: 20px;
+}
+
+.recent-title {
+  margin: 0 0 8px;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 1rem;
+  color: var(--paper-dim);
+}
+
+.recent-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.recent-tile {
+  position: relative;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  overflow: hidden;
+  background: var(--slate-deep);
+  cursor: pointer;
+}
+
+.recent-tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: filter 150ms ease;
+}
+
+.recent-tile:hover img {
+  filter: brightness(1.15);
+}
+
+.recent-tile.is-empty {
+  outline: 1px dashed var(--slate-line);
+  outline-offset: -1px;
+  cursor: default;
+}
+
+.recent-tile.on-screen {
+  outline: 2px solid var(--ochre);
+  outline-offset: 2px;
+}
+
+.saved-dot {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--moss);
+  box-shadow:
+    0 0 0 2px rgba(20, 25, 27, 0.8),
+    0 0 8px rgba(139, 154, 105, 0.7);
+  pointer-events: none;
+}
+
+.recent-tile .saved-dot {
+  right: 4px;
+  bottom: 4px;
+  width: 8px;
+  height: 8px;
+}
+
 /* ---------- fog of war ---------- */
 
 .card {

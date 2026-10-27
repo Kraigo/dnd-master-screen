@@ -36,11 +36,14 @@ import {
   newProjectId,
   projectDir,
   readFog,
+  readRecent,
   readProjects,
   readSettings,
   removeProjectCache,
   updateSettings,
   writeFog,
+  writeRecent,
+  type RecentEntry,
   writeProjects,
   type Settings,
 } from "./store.ts";
@@ -81,7 +84,10 @@ const BLACK: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, 
 let state: ScreenState = BLACK;
 /** Fog of war of the active project's images (item id -> mask), persisted in fog.json. */
 let fog = new Map<string, string>();
-let fogSaveTimer: ReturnType<typeof setTimeout> | undefined;
+/** Recently shown images with their view, newest first (the recents palette), persisted in recent.json. */
+let recent: RecentEntry[] = [];
+const RECENT_MAX = 9;
+let stateSaveTimer: ReturnType<typeof setTimeout> | undefined;
 let screenAspect = 16 / 9;
 let syncStatus: SyncStatus = idleStatus();
 let server: Server<WsData> | null = null;
@@ -116,9 +122,10 @@ async function activate(project: Project | null): Promise<void> {
   stopWatching?.();
   stopWatching = null;
   active = project;
-  await flushFog();
+  await flushProjectState();
   state = BLACK;
   fog = project ? await readFog(project.id) : new Map();
+  recent = project ? await readRecent(project.id) : [];
   if (settings.activeProjectId !== (project?.id ?? null)) {
     settings = await updateSettings({ activeProjectId: project?.id ?? null });
   }
@@ -157,6 +164,7 @@ function appState(req: Request): AppState {
     folderError,
     sync: syncStatus,
     fogged: [...fog.keys()],
+    recent: recent.map((r) => r.itemId),
     notion: { tokenSet: !!settings.notionToken, workspace: settings.notionWorkspace },
     lan: { enabled: settings.lanEnabled, addresses: lanAddresses() },
     local: isLocal(req),
@@ -192,17 +200,31 @@ function publishFogged(): void {
   publishPanel({ type: "fogged", ids: [...fog.keys()] });
 }
 
-/** Save fog a moment after the last change (the editor sends many updates while painting). */
-function saveFogSoon(): void {
-  clearTimeout(fogSaveTimer);
-  fogSaveTimer = setTimeout(() => void flushFog(), 1000);
+/** Put what is on screen first in the recents palette, keeping its current view. */
+function touchRecent(): void {
+  if (!state.itemId || !fileById.has(state.itemId)) return;
+  const entry: RecentEntry = { itemId: state.itemId, zoom: state.zoom, focusX: state.focusX, focusY: state.focusY };
+  const order = recent.map((r) => r.itemId).join();
+  recent = [entry, ...recent.filter((r) => r.itemId !== entry.itemId)].slice(0, RECENT_MAX);
+  saveStateSoon();
+  // The panel only shows the order; zoom changes alone need no message.
+  if (recent.map((r) => r.itemId).join() !== order) publishPanel({ type: "recent", ids: recent.map((r) => r.itemId) });
 }
 
-async function flushFog(): Promise<void> {
-  if (fogSaveTimer === undefined) return;
-  clearTimeout(fogSaveTimer);
-  fogSaveTimer = undefined;
-  if (active) await writeFog(active.id, fog).catch((e) => console.error(`Could not save fog: ${(e as Error).message}`));
+/** Save fog and recents a moment after the last change (the editor sends many updates while painting). */
+function saveStateSoon(): void {
+  clearTimeout(stateSaveTimer);
+  stateSaveTimer = setTimeout(() => void flushProjectState(), 1000);
+}
+
+async function flushProjectState(): Promise<void> {
+  if (stateSaveTimer === undefined) return;
+  clearTimeout(stateSaveTimer);
+  stateSaveTimer = undefined;
+  if (!active) return;
+  await Promise.all([writeFog(active.id, fog), writeRecent(active.id, recent)]).catch((e) =>
+    console.error(`Could not save fog and recent images: ${(e as Error).message}`),
+  );
 }
 
 /** A fog mask from the editor: empty (fully covered) or a PNG data URL of sane size. */
@@ -236,7 +258,7 @@ function handlePanelCommand(cmd: PanelCommand): void {
       if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId)) return;
       if (!fog.has(cmd.itemId)) {
         fog.set(cmd.itemId, "");
-        saveFogSoon();
+        saveStateSoon();
         publishFogged();
       }
       const same = state.itemId === cmd.itemId;
@@ -248,7 +270,7 @@ function handlePanelCommand(cmd: PanelCommand): void {
     case "unfog": {
       if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId)) return;
       if (fog.delete(cmd.itemId)) {
-        saveFogSoon();
+        saveStateSoon();
         publishFogged();
       }
       const same = state.itemId === cmd.itemId;
@@ -261,7 +283,7 @@ function handlePanelCommand(cmd: PanelCommand): void {
       if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId) || !validMask(cmd.mask)) return;
       const isNew = !fog.has(cmd.itemId);
       fog.set(cmd.itemId, cmd.mask);
-      saveFogSoon();
+      saveStateSoon();
       if (isNew) publishFogged();
       // Only the screen cares, and only if this image is on it under fog.
       if (state.itemId !== cmd.itemId || !state.fog) return;
@@ -282,9 +304,23 @@ function handlePanelCommand(cmd: PanelCommand): void {
         focusY: clamp(num(cmd.focusY, 0.5), 0, 1),
       };
       break;
+    case "show-recent": {
+      const entry = recent.find((r) => r.itemId === cmd.itemId);
+      if (!entry || !fileById.has(entry.itemId)) return;
+      state = {
+        mode: "image",
+        itemId: entry.itemId,
+        zoom: clamp(entry.zoom, MIN_ZOOM, MAX_ZOOM),
+        focusX: clamp(entry.focusX, 0, 1),
+        focusY: clamp(entry.focusY, 0, 1),
+        fog: fog.has(entry.itemId),
+      };
+      break;
+    }
     default:
       return;
   }
+  if (cmd.type !== "blackout" && cmd.type !== "restore") touchRecent();
   publishState();
 }
 
@@ -484,7 +520,7 @@ export async function clearAllData(): Promise<string | null> {
 export function quitApp(reason: string): void {
   console.log(`\n${reason}`);
   // Save pending fog edits first; exit even if that fails.
-  void flushFog().finally(() => {
+  void flushProjectState().finally(() => {
     if (process.stdin.isTTY) process.stdin.setRawMode(false);
     process.exit(0);
   });
@@ -614,8 +650,8 @@ function createServer(hostname: string, port: number): Server<WsData> {
           await saveProjects();
           // Pending fog edits of a removed project must not recreate its folder.
           if (active?.id === p.id) {
-            clearTimeout(fogSaveTimer);
-            fogSaveTimer = undefined;
+            clearTimeout(stateSaveTimer);
+            stateSaveTimer = undefined;
           }
           // Only our own cache is removed; a linked folder is never touched.
           await removeProjectCache(p.id);
