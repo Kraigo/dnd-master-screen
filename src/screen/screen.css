@@ -22,9 +22,6 @@ html.idle * {
 .layer {
   position: absolute;
   inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
   transform-origin: 0 0;
   opacity: 0;
   transition:
@@ -35,6 +32,27 @@ html.idle * {
 
 .layer.front {
   opacity: 1;
+}
+
+.layer img,
+.layer .fog {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.layer img {
+  object-fit: contain;
+}
+
+/* Revealing everything fades the fog out; covering is always instant. */
+.fog {
+  transition: opacity 500ms ease;
+}
+
+.fog.covering {
+  transition: none;
 }
 
 .layer.instant {

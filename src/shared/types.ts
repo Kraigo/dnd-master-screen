@@ -53,6 +53,8 @@ export interface AppState {
   /** Folder projects: why the folder could not be read (missing, no access). */
   folderError: string | null;
   sync: SyncStatus;
+  /** Items of the active project that have fog of war. */
+  fogged: string[];
   notion: { tokenSet: boolean; workspace: string | null };
   /** Access from other devices on the network. */
   lan: {
@@ -73,7 +75,15 @@ export interface ScreenState {
   zoom: number;
   focusX: number;
   focusY: number;
+  /** The image is shown under fog of war. */
+  fog: boolean;
 }
+
+/**
+ * Fog of war of one image: null = no fog, "" = fully covered, otherwise a PNG
+ * data URL whose opaque pixels are the revealed parts (image-relative, any size).
+ */
+export type FogMask = string | null;
 
 /**
  * What the players' screen receives. Deliberately carries no labels or ids,
@@ -85,6 +95,7 @@ export interface ScreenView {
   zoom: number;
   focusX: number;
   focusY: number;
+  fog: FogMask;
 }
 
 export interface SyncStatus {
@@ -108,14 +119,22 @@ export type PanelCommand =
   | { type: "show"; itemId: string }
   | { type: "blackout" }
   | { type: "restore" }
-  | { type: "view"; zoom: number; focusX: number; focusY: number };
+  | { type: "view"; zoom: number; focusX: number; focusY: number }
+  /** Show under fog; an image without fog starts fully covered. */
+  | { type: "show-fogged"; itemId: string }
+  /** Forget the fog of an image and show it fully. */
+  | { type: "unfog"; itemId: string }
+  /** New fog of an image, from the fog editor. */
+  | { type: "fog-mask"; itemId: string; mask: string };
 
 // Screen -> server.
 export type ScreenHello = { type: "viewport"; width: number; height: number };
 
 // Server -> panel.
 export type PanelMessage =
-  | { type: "state"; state: ScreenState; screens: number; aspect: number }
+  | { type: "state"; state: ScreenState; screens: number; aspect: number; fog: FogMask }
+  /** Items that have fog of war (the eye icons). */
+  | { type: "fogged"; ids: string[] }
   | { type: "sync"; status: SyncStatus }
   | { type: "manifest" };
 

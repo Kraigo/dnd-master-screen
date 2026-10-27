@@ -5,6 +5,7 @@ import { connectSocket } from "../shared/socket.ts";
 import {
   isLocalProject,
   type AppState,
+  type FogMask,
   type Manifest,
   type ManifestGroup,
   type ManifestItem,
@@ -13,13 +14,19 @@ import {
   type ScreenState,
   type SyncStatus,
 } from "../shared/types.ts";
+import { drawFog, loadMask } from "../shared/fog.ts";
 import { clamp, computeView, MAX_ZOOM, MIN_ZOOM, pointToFocus, transformCss, type ViewTransform } from "../shared/view.ts";
+import { FogEditor } from "./fog-editor.ts";
 
 const $ = <T extends HTMLElement = HTMLElement>(id: string) => document.getElementById(id) as T;
 
 const els = {
   preview: $("preview"),
   previewImg: $<HTMLImageElement>("preview-img"),
+  previewFog: $<HTMLCanvasElement>("preview-fog"),
+  fogActions: $("fog-actions"),
+  btnFogEdit: $<HTMLButtonElement>("btn-fog-edit"),
+  btnFogToggle: $<HTMLButtonElement>("btn-fog-toggle"),
   previewFocus: $("preview-focus"),
   liveLabel: $("live-label"),
   zoom: $("zoom"),
@@ -86,7 +93,11 @@ let app: AppState | null = null;
 let manifest: Manifest | null = null;
 let activeGroup = "";
 let query = "";
-let screen: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, focusY: 0.5 };
+let screen: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, focusY: 0.5, fog: false };
+/** Fog of what is on screen now, and the items that have fog (eye icons). */
+let liveFog: FogMask = null;
+let liveFogImg: HTMLImageElement | null = null;
+let fogged = new Set<string>();
 let sync: SyncStatus | null = null;
 let itemsById = new Map<string, ManifestItem>();
 let visible: ManifestItem[] = [];
@@ -105,6 +116,21 @@ const socket = connectSocket(
 function send(cmd: unknown): void {
   socket.send(cmd);
 }
+
+const fogEditor = new FogEditor((itemId, mask) => send({ type: "fog-mask", itemId, mask }));
+
+/** Open the fog editor for the image on screen (it must be under fog). */
+function editFog(): void {
+  const item = screen.itemId ? itemsById.get(screen.itemId) : undefined;
+  if (!item?.file || !screen.fog) return;
+  void fogEditor.show(item.id, item.label, `/images/${item.file}`, liveFog ?? "");
+}
+
+els.btnFogEdit.addEventListener("click", editFog);
+els.btnFogToggle.addEventListener("click", () => {
+  if (!screen.itemId) return;
+  send({ type: screen.fog ? "unfog" : "show-fogged", itemId: screen.itemId });
+});
 
 // ---------------------------------------------------------------------------
 // Manifest + library grid
@@ -134,6 +160,7 @@ async function loadState(): Promise<void> {
   const prevProject = app?.activeProjectId;
   app = (await res.json()) as AppState;
   manifest = app.manifest;
+  fogged = new Set(app.fogged);
   if (!sync || !sync.running) sync = app.sync;
   itemsById = new Map();
   for (const g of manifest?.groups ?? []) for (const it of g.items) if (!itemsById.has(it.id)) itemsById.set(it.id, it);
@@ -189,6 +216,31 @@ function renderTabs(groups: ManifestGroup[]): void {
       return b;
     }),
   );
+}
+
+const EYE_OPEN =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="3"/></svg>';
+const EYE_CLOSED =
+  '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2 12s3.6-6.5 10-6.5c1.6 0 3 .4 4.2 1M22 12s-3.6 6.5-10 6.5c-1.6 0-3-.4-4.2-1"/><path d="M9.9 14.1a3 3 0 0 1 4.2-4.2M3 21 21 3"/></svg>';
+
+/** A grid card: the image button plus, for images, the fog eye in its corner. */
+function itemCard(item: ManifestItem, index: number): HTMLElement {
+  const card = document.createElement("div");
+  card.className = "card";
+  card.append(itemButton(item, index));
+  if (item.file) {
+    const hasFog = fogged.has(item.id);
+    const eye = document.createElement("button");
+    eye.type = "button";
+    eye.className = "eye";
+    eye.dataset.fog = String(hasFog);
+    eye.innerHTML = hasFog ? EYE_OPEN : EYE_CLOSED;
+    eye.title = hasFog ? "Remove the fog and show the whole image" : "Show under fog of war";
+    eye.setAttribute("aria-label", `${eye.title}: ${item.label}`);
+    eye.addEventListener("click", () => send({ type: hasFog ? "unfog" : "show-fogged", itemId: item.id }));
+    card.append(eye);
+  }
+  return card;
 }
 
 function itemButton(item: ManifestItem, index: number): HTMLButtonElement {
@@ -314,7 +366,7 @@ function renderLibrary(): void {
   // Items with an image first keep their numbers stable for the 1–9 shortcuts.
   visible = list.filter((i) => i.file);
   let n = 0;
-  els.grid.replaceChildren(...list.map((it) => itemButton(it, it.file ? n++ : -1)));
+  els.grid.replaceChildren(...list.map((it) => itemCard(it, it.file ? n++ : -1)));
   if (list.length === 0) {
     showEmpty(query ? "Nothing found" : "This section is empty", query ? "Try another word or clear the search." : "");
   } else {
@@ -366,6 +418,21 @@ function updatePreviewTransform(): void {
   const box = els.preview.getBoundingClientRect();
   previewView = computeView(box.width, box.height, img.naturalWidth, img.naturalHeight, screen.zoom, screen.focusX, screen.focusY);
   img.style.transform = transformCss(previewView);
+  els.previewFog.style.transform = img.style.transform;
+  els.previewFog.hidden = liveFog === null;
+  if (liveFog !== null) drawFog(els.previewFog, box.width, box.height, img.naturalWidth, img.naturalHeight, liveFogImg);
+}
+
+/** New fog for the preview: decode, then redraw (older decodes that finish late are dropped). */
+let liveFogToken = 0;
+async function setLiveFog(mask: FogMask): Promise<void> {
+  if (mask === liveFog) return;
+  const token = ++liveFogToken;
+  const img = mask ? await loadMask(mask) : null;
+  if (token !== liveFogToken) return;
+  liveFog = mask;
+  liveFogImg = img;
+  updatePreviewTransform();
 }
 
 function renderLive(): void {
@@ -394,6 +461,9 @@ function renderLive(): void {
   els.zoomReset.disabled = !src;
   els.btnBlack.disabled = screen.mode === "black";
   els.btnRestore.disabled = !(screen.mode === "black" && src);
+  els.fogActions.hidden = !src;
+  els.btnFogEdit.disabled = !screen.fog;
+  els.btnFogToggle.textContent = screen.fog ? "Remove fog" : "Cover with fog";
   markOnScreen();
 }
 
@@ -475,7 +545,7 @@ function step(delta: number): void {
 document.addEventListener("keydown", (e) => {
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   // While the Projects dialog is open, keys belong to it (Esc closes it).
-  if (els.dialog.open) return;
+  if (els.dialog.open || fogEditor.open) return;
   const typing =
     (e.target instanceof HTMLInputElement && e.target.type !== "range") || e.target instanceof HTMLSelectElement;
 
@@ -493,6 +563,10 @@ document.addEventListener("keydown", (e) => {
     case "KeyB":
       e.preventDefault();
       blackout();
+      return;
+    case "KeyE":
+      e.preventDefault();
+      editFog();
       return;
     case "KeyR":
       e.preventDefault();
@@ -912,6 +986,7 @@ function onMessage(msg: PanelMessage): void {
   switch (msg.type) {
     case "state": {
       screen = msg.state;
+      void setLiveFog(msg.fog);
       els.preview.style.setProperty("--screen-aspect", String(msg.aspect));
       const n = msg.screens;
       els.screenDot.classList.toggle("on", n > 0);
@@ -920,6 +995,10 @@ function onMessage(msg: PanelMessage): void {
       renderLive();
       break;
     }
+    case "fogged":
+      fogged = new Set(msg.ids);
+      renderLibrary();
+      break;
     case "sync":
       sync = msg.status;
       renderSync();

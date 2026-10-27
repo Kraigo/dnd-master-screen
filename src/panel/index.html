@@ -23,6 +23,7 @@
           <h1 id="live-title" class="live-title">On screen now</h1>
           <div class="preview" id="preview" data-mode="black" title="Click to choose the zoom center">
             <img id="preview-img" alt="" draggable="false" />
+            <canvas class="preview-fog" id="preview-fog" hidden></canvas>
             <div class="preview-veil" id="preview-veil"><span>Blacked out</span></div>
             <div class="preview-focus" id="preview-focus" hidden></div>
           </div>
@@ -39,6 +40,10 @@
             <button type="button" class="act act-black" id="btn-black">Black out</button>
             <button type="button" class="act" id="btn-restore">Show again</button>
           </div>
+          <div class="actions fog-actions" id="fog-actions" hidden>
+            <button type="button" class="act" id="btn-fog-edit">Edit fog</button>
+            <button type="button" class="act" id="btn-fog-toggle">Cover with fog</button>
+          </div>
 
           <dl class="keys">
             <div><dt>B, Esc</dt><dd>black out</dd></div>
@@ -46,6 +51,7 @@
             <div><dt>← →</dt><dd>prev / next image</dd></div>
             <div><dt>1–9</dt><dd>image by number</dd></div>
             <div><dt>+ − 0</dt><dd>zoom</dd></div>
+            <div><dt>E</dt><dd>edit fog</dd></div>
           </dl>
         </section>
 
@@ -189,6 +195,29 @@
         <p class="hint">You can close this tab. This page comes back by itself when the app starts again.</p>
       </div>
     </main>
+
+    <dialog class="fog-editor" id="fog-editor" aria-labelledby="fog-title">
+      <header class="fog-bar">
+        <h2 id="fog-title">Fog of war</h2>
+        <div class="seg" role="group" aria-label="Brush">
+          <button type="button" data-fog-mode="reveal" aria-pressed="true">Reveal</button>
+          <button type="button" data-fog-mode="hide" aria-pressed="false">Hide</button>
+        </div>
+        <label class="fog-size">Brush <input id="fog-size" type="range" min="1" max="30" value="7" /></label>
+        <button type="button" class="quiet" id="fog-reveal-all">Reveal all</button>
+        <button type="button" class="quiet" id="fog-cover-all">Cover all</button>
+        <button type="button" class="act" id="fog-done">Done</button>
+      </header>
+      <div class="fog-stage" id="fog-stage">
+        <img id="fog-img" alt="" draggable="false" />
+        <canvas id="fog-canvas"></canvas>
+        <div class="fog-cursor" id="fog-cursor" hidden></div>
+      </div>
+      <p class="fog-hint">
+        Players see every change as you paint. Hold Alt (Option) to paint with the other brush, X switches it,
+        [ and ] change its size.
+      </p>
+    </dialog>
 
     <div class="toast" id="toast" role="status" hidden></div>
 

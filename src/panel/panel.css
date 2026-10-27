@@ -879,6 +879,192 @@ select {
   box-shadow: 0 16px 40px -12px rgba(0, 0, 0, 0.7);
 }
 
+/* ---------- fog of war ---------- */
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+}
+
+.eye {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(20, 25, 27, 0.72);
+  color: var(--paper-dim);
+  cursor: pointer;
+  opacity: 0.75;
+  transition:
+    opacity 150ms ease,
+    color 150ms ease;
+}
+
+.eye svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.card:hover .eye,
+.eye:focus-visible {
+  opacity: 1;
+}
+
+.eye:hover {
+  color: var(--paper);
+}
+
+/* Images that have fog: the open eye stays visible, so fogged images stand out. */
+.eye[data-fog="true"] {
+  opacity: 1;
+  color: var(--ochre);
+}
+
+.preview-fog {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform-origin: 0 0;
+  transition: transform 700ms var(--ease);
+  /* The DM sees through the fog; the players do not. */
+  opacity: 0.62;
+  pointer-events: none;
+}
+
+.fog-actions {
+  margin-top: 10px;
+}
+
+.fog-editor {
+  width: 100vw;
+  max-width: none;
+  height: 100vh;
+  max-height: none;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: #070809;
+  color: var(--paper);
+}
+
+.fog-editor[open] {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+}
+
+.fog-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 18px;
+  padding: 14px 20px;
+  background: var(--slate);
+  border-bottom: 1px solid var(--slate-line);
+}
+
+.fog-bar h2 {
+  flex: 1;
+  min-width: 12em;
+  margin: 0;
+  font-family: var(--serif);
+  font-weight: 500;
+  font-size: 1.25rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.seg {
+  display: flex;
+  border: 1px solid var(--slate-line);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.seg button {
+  padding: 7px 14px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.seg button[aria-pressed="true"] {
+  background: var(--ochre-soft);
+  color: var(--ochre);
+}
+
+.fog-size {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--paper-dim);
+  font-size: 0.92rem;
+}
+
+.fog-size input {
+  accent-color: var(--ochre);
+}
+
+.fog-stage {
+  position: relative;
+  min-height: 0;
+  margin: 16px;
+  overflow: hidden;
+  cursor: none;
+  touch-action: none;
+}
+
+.fog-stage img,
+.fog-stage canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  user-select: none;
+}
+
+.fog-stage img {
+  object-fit: contain;
+}
+
+.fog-stage canvas {
+  opacity: 0.62;
+}
+
+.fog-cursor {
+  position: absolute;
+  border: 1.5px solid var(--ochre);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5);
+}
+
+.fog-cursor[data-mode="hide"] {
+  border-color: var(--paper-dim);
+  border-style: dashed;
+}
+
+.fog-hint {
+  margin: 0;
+  padding: 0 20px 14px;
+  color: var(--paper-faint);
+  font-size: 0.88rem;
+}
+
 .item:focus-visible {
   outline: 2px solid var(--paper-dim);
   outline-offset: 6px;

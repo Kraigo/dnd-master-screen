@@ -205,7 +205,10 @@ export function startConsole(masterUrl: string): void {
       const chunk = await keys.next();
       if (chunk.startsWith("\u001b")) continue; // arrows, function keys
       const ch = chunk[0]!;
-      if (ch === "\u0003" || ch === "\u0004") quitApp("Stopped."); // Ctrl+C, Ctrl+D
+      if (ch === "\u0003" || ch === "\u0004") {
+        quitApp("Stopped."); // Ctrl+C, Ctrl+D
+        return;
+      }
       const key = LAYOUT[ch.toLowerCase()] ?? ch.toLowerCase();
       say();
       try {
@@ -231,7 +234,7 @@ export function startConsole(masterUrl: string): void {
             break;
           case "q":
             quitApp("Stopped.");
-            break;
+            return;
           case "h":
           case "?":
             say(HELP);

@@ -34,6 +34,19 @@ export function projectDir(id: string): string {
   return join(DATA_DIR, "projects", id);
 }
 
+/** Fog of war of a project's images: item id -> mask (see FogMask). */
+export async function readFog(id: string): Promise<Map<string, string>> {
+  const data = await readJson<Record<string, unknown>>(join(projectDir(id), "fog.json"));
+  const out = new Map<string, string>();
+  for (const [k, v] of Object.entries(data ?? {})) if (typeof v === "string") out.set(k, v);
+  return out;
+}
+
+export async function writeFog(id: string, fog: Map<string, string>): Promise<void> {
+  await mkdir(projectDir(id), { recursive: true });
+  await writeJsonAtomic(join(projectDir(id), "fog.json"), Object.fromEntries(fog));
+}
+
 /** Write via a temp file + rename so a crash never leaves a half-written file. */
 export async function writeJsonAtomic(path: string, data: unknown, mode?: number): Promise<void> {
   const tmp = `${path}.tmp`;

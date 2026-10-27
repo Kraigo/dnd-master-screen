@@ -24,6 +24,7 @@ import {
   type Project,
   type ScreenHello,
   type ScreenMessage,
+  type FogMask,
   type ScreenState,
   type ScreenView,
   type SyncStatus,
@@ -34,10 +35,12 @@ import {
   ensureDataDir,
   newProjectId,
   projectDir,
+  readFog,
   readProjects,
   readSettings,
   removeProjectCache,
   updateSettings,
+  writeFog,
   writeProjects,
   type Settings,
 } from "./store.ts";
@@ -74,7 +77,11 @@ let folderFiles = new Map<string, string>();
 let fileById = new Map<string, string>();
 let stopWatching: (() => void) | null = null;
 
-let state: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, focusY: 0.5 };
+const BLACK: ScreenState = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, focusY: 0.5, fog: false };
+let state: ScreenState = BLACK;
+/** Fog of war of the active project's images (item id -> mask), persisted in fog.json. */
+let fog = new Map<string, string>();
+let fogSaveTimer: ReturnType<typeof setTimeout> | undefined;
 let screenAspect = 16 / 9;
 let syncStatus: SyncStatus = idleStatus();
 let server: Server<WsData> | null = null;
@@ -109,7 +116,9 @@ async function activate(project: Project | null): Promise<void> {
   stopWatching?.();
   stopWatching = null;
   active = project;
-  state = { mode: "black", itemId: null, zoom: 1, focusX: 0.5, focusY: 0.5 };
+  await flushFog();
+  state = BLACK;
+  fog = project ? await readFog(project.id) : new Map();
   if (settings.activeProjectId !== (project?.id ?? null)) {
     settings = await updateSettings({ activeProjectId: project?.id ?? null });
   }
@@ -147,6 +156,7 @@ function appState(req: Request): AppState {
     manifest,
     folderError,
     sync: syncStatus,
+    fogged: [...fog.keys()],
     notion: { tokenSet: !!settings.notionToken, workspace: settings.notionWorkspace },
     lan: { enabled: settings.lanEnabled, addresses: lanAddresses() },
     local: isLocal(req),
@@ -156,6 +166,12 @@ function appState(req: Request): AppState {
 // ---------------------------------------------------------------------------
 // Screen state
 
+/** Fog of what is on screen now (see FogMask). */
+function currentFog(): FogMask {
+  if (!state.fog || !state.itemId) return null;
+  return fog.get(state.itemId) ?? "";
+}
+
 function screenView(): ScreenView {
   const file = state.itemId ? fileById.get(state.itemId) : undefined;
   return {
@@ -164,11 +180,34 @@ function screenView(): ScreenView {
     zoom: state.zoom,
     focusX: state.focusX,
     focusY: state.focusY,
+    fog: currentFog(),
   };
 }
 
 function panelStateMessage(): PanelMessage {
-  return { type: "state", state, screens: server?.subscriberCount("screen") ?? 0, aspect: screenAspect };
+  return { type: "state", state, screens: server?.subscriberCount("screen") ?? 0, aspect: screenAspect, fog: currentFog() };
+}
+
+function publishFogged(): void {
+  publishPanel({ type: "fogged", ids: [...fog.keys()] });
+}
+
+/** Save fog a moment after the last change (the editor sends many updates while painting). */
+function saveFogSoon(): void {
+  clearTimeout(fogSaveTimer);
+  fogSaveTimer = setTimeout(() => void flushFog(), 1000);
+}
+
+async function flushFog(): Promise<void> {
+  if (fogSaveTimer === undefined) return;
+  clearTimeout(fogSaveTimer);
+  fogSaveTimer = undefined;
+  if (active) await writeFog(active.id, fog).catch((e) => console.error(`Could not save fog: ${(e as Error).message}`));
+}
+
+/** A fog mask from the editor: empty (fully covered) or a PNG data URL of sane size. */
+function validMask(mask: unknown): mask is string {
+  return typeof mask === "string" && (mask === "" || (mask.startsWith("data:image/png;base64,") && mask.length < 4_000_000));
 }
 
 function publishPanel(msg: PanelMessage): void {
@@ -189,7 +228,43 @@ function handlePanelCommand(cmd: PanelCommand): void {
   switch (cmd.type) {
     case "show": {
       if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId)) return;
-      state = { mode: "image", itemId: cmd.itemId, zoom: 1, focusX: 0.5, focusY: 0.5 };
+      // An image that was fogged before comes back with its fog.
+      state = { mode: "image", itemId: cmd.itemId, zoom: 1, focusX: 0.5, focusY: 0.5, fog: fog.has(cmd.itemId) };
+      break;
+    }
+    case "show-fogged": {
+      if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId)) return;
+      if (!fog.has(cmd.itemId)) {
+        fog.set(cmd.itemId, "");
+        saveFogSoon();
+        publishFogged();
+      }
+      const same = state.itemId === cmd.itemId;
+      state = same
+        ? { ...state, mode: "image", fog: true }
+        : { mode: "image", itemId: cmd.itemId, zoom: 1, focusX: 0.5, focusY: 0.5, fog: true };
+      break;
+    }
+    case "unfog": {
+      if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId)) return;
+      if (fog.delete(cmd.itemId)) {
+        saveFogSoon();
+        publishFogged();
+      }
+      const same = state.itemId === cmd.itemId;
+      state = same
+        ? { ...state, mode: "image", fog: false }
+        : { mode: "image", itemId: cmd.itemId, zoom: 1, focusX: 0.5, focusY: 0.5, fog: false };
+      break;
+    }
+    case "fog-mask": {
+      if (typeof cmd.itemId !== "string" || !fileById.has(cmd.itemId) || !validMask(cmd.mask)) return;
+      const isNew = !fog.has(cmd.itemId);
+      fog.set(cmd.itemId, cmd.mask);
+      saveFogSoon();
+      if (isNew) publishFogged();
+      // Only the screen cares, and only if this image is on it under fog.
+      if (state.itemId !== cmd.itemId || !state.fog) return;
       break;
     }
     case "blackout":
@@ -406,10 +481,13 @@ export async function clearAllData(): Promise<string | null> {
   return null;
 }
 
-export function quitApp(reason: string): never {
+export function quitApp(reason: string): void {
   console.log(`\n${reason}`);
-  if (process.stdin.isTTY) process.stdin.setRawMode(false);
-  process.exit(0);
+  // Save pending fog edits first; exit even if that fails.
+  void flushFog().finally(() => {
+    if (process.stdin.isTTY) process.stdin.setRawMode(false);
+    process.exit(0);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -449,6 +527,8 @@ export async function startServer(port: number): Promise<Server<WsData>> {
   await ensureDataDir();
   projects = await readProjects();
   settings = await readSettings();
+  // Closing the console window or stopping the process: save pending fog edits first.
+  for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => quitApp("Stopped."));
   server = createServer(listenHost(), port);
   await activate(findProject(settings.activeProjectId) ?? projects[0] ?? null);
   return server;
@@ -532,6 +612,11 @@ function createServer(hostname: string, port: number): Server<WsData> {
           if (syncStatus.running && syncStatus.projectId === p.id) return json({ error: "Wait for the sync to finish" }, 409);
           projects = projects.filter((x) => x.id !== p.id);
           await saveProjects();
+          // Pending fog edits of a removed project must not recreate its folder.
+          if (active?.id === p.id) {
+            clearTimeout(fogSaveTimer);
+            fogSaveTimer = undefined;
+          }
           // Only our own cache is removed; a linked folder is never touched.
           await removeProjectCache(p.id);
           if (active?.id === p.id) await activate(projects[0] ?? null);

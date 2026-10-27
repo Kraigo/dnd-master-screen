@@ -120,7 +120,19 @@ Controls:
 - "Show again" or `R`: bring back the last image
 - `←` `→`: neighbouring image in the current tab, `1`–`9`: image by number
 - zoom for maps: the 1×–4× slider or a click on the preview (centres the players' screen on that point; at 1× it also zooms to 2×). `+` `−` change zoom, `0` and "Reset" reset
+- `E`: edit the fog of the image on screen
 - `/`: search by title
+
+### Fog of war
+
+Hide parts of an image (a dungeon map, a crime scene) and reveal them as the players explore.
+
+- Every image card has an eye in its corner. **Closed eye**: show the image under fog, fully covered at first. Once an image has fog, the eye turns into an **open eye**: it removes the fog and shows the whole image.
+- **Edit fog** (or `E`) under the preview opens the editor for the image on screen. Paint with **Reveal** or **Hide**; hold Alt (Option) to paint with the other brush, `X` switches it, `[` `]` change the brush size, "Reveal all" / "Cover all" do it at once. The players see every change while you paint; you see the image through a translucent fog.
+- Fog is remembered per image: showing that image again later brings its fog back exactly as you left it, also after restarting the app. "Remove fog" (or the open eye) forgets it.
+- The fog follows zoom: zooming in on a fogged map keeps hidden parts hidden.
+
+Fog is stored in `projects/<id>/fog.json` in the app data folder.
 
 Letter shortcuts also work with a non-Latin (e.g. Ukrainian) keyboard layout.
 
@@ -169,6 +181,7 @@ Code:
 - `src/server.ts`: HTTP API, WebSocket, screen state, active project, other-devices mode and master password
 - `src/store.ts`: app data folder, `settings.json`, `projects.json`
 - `src/projects/folder.ts`: folder scanning and watching
+- `src/shared/fog.ts`, `src/panel/fog-editor.ts`: fog of war drawing and the brush editor
 - `src/projects/obsidian.ts`: Obsidian vault scanning (images grouped by the notes that embed them)
 - `src/sync/`: Notion discovery (`notion.ts`) and incremental download (`index.ts`)
 - `src/os/`: native folder dialog, opening the browser
